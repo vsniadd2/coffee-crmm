@@ -1,8 +1,14 @@
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  connectionString: 'postgresql://admin:admin123@localhost:5432/coffee_crm',
-});
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER || 'admin',
+  password: process.env.DB_PASSWORD || 'admin123',
+  database: process.env.DB_NAME || 'coffee_crm',
+};
+
+const pool = new Pool(dbConfig);
 
 // Устанавливаем часовой пояс для всех подключений
 pool.on('connect', async (client) => {

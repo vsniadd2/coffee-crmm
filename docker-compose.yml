@@ -4,19 +4,63 @@ services:
   postgres:
     image: postgres:15
     container_name: coffee_crm_db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-      POSTGRES_DB: coffee_crm
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: ${POSTGRES_DB:-coffee_crm}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - coffee_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-coffee_crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: coffee_crm_backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-admin}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - DB_NAME=${POSTGRES_DB:-coffee_crm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - coffee_network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: coffee_crm_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
     networks:
       - coffee_network
 
 volumes:
   postgres_data:
+    driver: local
 
 networks:
   coffee_network:
