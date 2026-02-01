@@ -302,6 +302,24 @@ const initDatabase = async () => {
     // выполняются только CREATE TABLE и ALTER TABLE (миграции), без INSERT/UPDATE/DELETE.
 
     console.log('✅ База данных успешно инициализирована');
+    
+    // Проверяем, нужно ли запустить импорт начальных данных (только при первом запуске)
+    try {
+      const countResult = await client.query('SELECT COUNT(*) as count FROM clients');
+      const clientCount = parseInt(countResult.rows[0].count);
+      
+      if (clientCount === 0) {
+        console.log('🔄 Первый запуск: запуск импорта начальных данных...');
+        // Запускаем импорт асинхронно, не блокируя запуск сервера
+        const { runInitialImports } = require('./scripts/run-initial-imports');
+        runInitialImports().catch(err => {
+          console.error('❌ Ошибка при импорте начальных данных:', err.message);
+        });
+      }
+    } catch (importCheckError) {
+      // Игнорируем ошибки проверки - не критично
+      console.log('ℹ️ Не удалось проверить необходимость импорта:', importCheckError.message);
+    }
   } catch (error) {
     console.error('❌ Ошибка инициализации базы данных:', error);
   } finally {

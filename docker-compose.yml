@@ -44,6 +44,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - ./lol:/lol
 
   frontend:
     build:
