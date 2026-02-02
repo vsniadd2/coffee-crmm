@@ -74,7 +74,7 @@ const ReplacementOrderModal = ({ order, onClose, onSuccess }) => {
     try {
       const result = await purchaseHistoryService.createReplacement(order.id, p, items)
       if (result.success) {
-        showNotification('Замена оформлена. Новый заказ сохранён.', 'success')
+        showNotification('Замена оформлена. Заказ обновлён.', 'success')
         setTimeout(() => refreshAll(), 100)
         onSuccess?.(result)
         onClose()

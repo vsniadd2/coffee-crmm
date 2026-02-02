@@ -24,6 +24,15 @@ export const clientService = {
     return response.json()
   },
 
+  async getStats() {
+    const response = await fetch(`${API_URL}/clients/stats`, {
+      headers: getAuthHeaders()
+    })
+    if (response.status === 403) throw new Error('UNAUTHORIZED')
+    if (!response.ok) throw new Error('Ошибка загрузки статистики')
+    return response.json()
+  },
+
   async search(query) {
     const q = typeof query === 'string' ? query.trim() : ''
     if (!q) return []

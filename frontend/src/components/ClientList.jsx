@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useClients } from '../hooks/useClients'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import { useAuth } from '../contexts/AuthContext'
@@ -48,6 +48,8 @@ const ClientList = ({ onSelectClient }) => {
     search: debouncedSearchQuery 
   })
   const { refreshKey, registerRefreshCallback } = useDataRefresh()
+  const [globalStats, setGlobalStats] = useState(null)
+  const [statsLoading, setStatsLoading] = useState(true)
 
   // Сохраняем поисковый запрос в localStorage
   useEffect(() => {
@@ -160,6 +162,23 @@ const ClientList = ({ onSelectClient }) => {
     }
   }, [clients])
 
+  // Загрузка глобальной статистики по всей БД
+  const loadGlobalStats = useCallback(async () => {
+    setStatsLoading(true)
+    try {
+      const stats = await clientService.getStats()
+      setGlobalStats(stats)
+    } catch {
+      setGlobalStats(null)
+    } finally {
+      setStatsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadGlobalStats()
+  }, [loadGlobalStats, refreshKey])
+
   // Регистрируем callback для обновления при изменениях данных
   useEffect(() => {
     const unregister = registerRefreshCallback((silent) => {
@@ -177,9 +196,10 @@ const ClientList = ({ onSelectClient }) => {
       }
       // Обновляем данные (silent режим передается из контекста)
       loadClients(page, limit, debouncedSearchQuery, silent !== false)
+      loadGlobalStats()
     })
     return unregister
-  }, [registerRefreshCallback, loadClients, page, limit, debouncedSearchQuery])
+  }, [registerRefreshCallback, loadClients, loadGlobalStats, page, limit, debouncedSearchQuery])
 
   // Обновляем данные при изменении refreshKey
   useEffect(() => {
@@ -333,7 +353,7 @@ const ClientList = ({ onSelectClient }) => {
             </button>
           )}
         </div>
-        <Stats clients={clients} pagination={pagination} />
+        <Stats globalStats={globalStats} loading={statsLoading} />
       </div>
       {clients.length === 0 ? (
         <div className="empty-state">

@@ -36,12 +36,56 @@
     align-items: start;
 }
 
+/* Фиксированная высота первой строки — оба поиска строго на одном уровне */
 .new-client-left-column {
     min-width: 0;
+    padding: 0;
+    display: grid;
+    grid-template-rows: 38px 1fr;
+    gap: 0;
 }
 
 .new-client-right-column {
     min-width: 0;
+    display: grid;
+    grid-template-rows: 38px 1fr;
+    gap: 0;
+    padding: 0;
+}
+
+.new-client-column-header {
+    grid-row: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.new-client-column-header h3 {
+    margin-top: 0;
+}
+
+.new-client-column-header-right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+/* Контент колонок (поиск и т.д.) во второй строке — выравнивается по верху */
+.new-client-left-column > .product-selector,
+.new-client-right-column > .new-client-right-content {
+    grid-row: 2;
+    min-height: 0;
+}
+
+.client-search-label-inline {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
 }
 
 .new-client-left-column h3 {
@@ -54,6 +98,31 @@
     gap: 16px;
     margin-bottom: 16px;
 }
+
+.form-row-price-anonymous {
+    align-items: end;
+}
+
+.form-row-price-anonymous .anonymous-checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin: 0;
+    padding-bottom: 2px;
+}
+
+.form-row-price-anonymous .anonymous-checkbox-inline input[type="checkbox"] {
+    width: 1.35rem;
+    height: 1.35rem;
+    min-width: 1.35rem;
+    min-height: 1.35rem;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
 
 .input-group {
     display: flex;
@@ -145,7 +214,7 @@
 .new-client-actions {
     display: flex;
     gap: 12px;
-    margin-top: 24px;
+    margin: 24px 0 0 0;
     padding-top: 20px;
     border-top: 1px solid var(--border-soft);
 }
@@ -175,9 +244,25 @@
 }
 
 .client-search-section {
-    margin-bottom: 24px;
-    padding-bottom: 20px;
+    margin: 0 0 24px 0;
+    padding: 0 0 20px 0;
     border-bottom: 1px solid var(--border-soft);
+}
+
+.client-search-section-disabled {
+    opacity: 0.75;
+}
+
+.client-search-section-disabled .client-search-input-main {
+    cursor: not-allowed;
+}
+
+.form-fields-client-disabled {
+    opacity: 0.75;
+}
+
+.form-fields-client-disabled .input-group input {
+    cursor: not-allowed;
 }
 
 .client-search-wrapper {
@@ -189,7 +274,7 @@
 
 .client-search-input-main {
     width: 100%;
-    padding: 12px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: 0.95rem;

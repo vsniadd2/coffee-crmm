@@ -5,7 +5,7 @@ import { useNotification } from './NotificationProvider'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import { useAuth } from '../contexts/AuthContext'
 import ProductSelector from './ProductSelector'
-import { normalizeMiddleNameForDisplay } from '../utils/clientDisplay'
+import { normalizeMiddleNameForDisplay, normalizeClientIdForDisplay } from '../utils/clientDisplay'
 import './NewClientPage.css'
 
 const NewClientPage = () => {
@@ -525,9 +525,11 @@ const NewClientPage = () => {
         <div className="new-client-two-columns">
           {/* Левая колонка - Выбор товаров */}
           <div className="new-client-left-column">
-            <h3 style={{ marginBottom: 14, fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
-              Выбор товаров
-            </h3>
+            <div className="new-client-column-header">
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
+                Выбор товаров
+              </h3>
+            </div>
             <ProductSelector 
               key={productSelectorKey}
               onProductsChange={handleProductsChange}
@@ -537,38 +539,21 @@ const NewClientPage = () => {
 
           {/* Правая колонка - Форма */}
           <div className="new-client-right-column">
-            {/* Чекбокс "Аноним" */}
-            <div className="form-row" style={{ marginBottom: 16 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem' }}>
-                <input
-                  type="checkbox"
-                  checked={isAnonymous}
-                  onChange={(e) => {
-                    setIsAnonymous(e.target.checked)
-                    if (e.target.checked) {
-                      setCheckedClient(null)
-                      setSearchQuery('')
-                      setSearchResults([])
-                      setDiscountInfo(null)
-                    }
-                  }}
-                  disabled={loading}
-                />
-                Аноним (заказ без регистрации клиента)
-              </label>
+            {/* Шапка колонки: подпись поиска (без чекбокса — он у поля «Цена») */}
+            <div className="new-client-column-header new-client-column-header-right">
+              {!isAnonymous && (
+                <span className="client-search-label-inline">Поиск клиента (для программы лояльности)</span>
+              )}
               {isAnonymous && (
-                <p style={{ marginTop: 6, marginBottom: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)', width: '100%' }}>
                   Достаточно указать цену или выбрать товары из каталога.
                 </p>
               )}
             </div>
 
-            {/* Поиск клиентов — скрыт в режиме анонима */}
-            {!isAnonymous && (
-            <div className="client-search-section">
-              <label style={{ marginBottom: 8, display: 'block', fontWeight: 600, fontSize: '0.9rem', color: 'var(--text)' }}>
-                Поиск клиента (для программы лояльности)
-              </label>
+            <div className="new-client-right-content">
+            {/* Поиск клиентов — в режиме анонима панель видна, но инпуты недоступны */}
+            <div className={`client-search-section ${isAnonymous ? 'client-search-section-disabled' : ''}`}>
               <div className="client-search-wrapper">
                 <input
                   ref={searchInputRef}
@@ -592,7 +577,7 @@ const NewClientPage = () => {
                   onBlur={() => {
                     wasFocusedRef.current = false
                   }}
-                  disabled={loading}
+                  disabled={loading || isAnonymous}
                 />
                 {searchQuery && (
                   <button
@@ -644,12 +629,10 @@ const NewClientPage = () => {
                 </div>
               )}
             </div>
-            )}
 
-            <form onSubmit={handleSubmit}>
-              {/* Поля имени/фамилии/ID — скрыты в режиме анонима */}
-              {!isAnonymous && (
-              <>
+            <form onSubmit={handleSubmit} className="new-client-form">
+              {/* Поля имени/фамилии/ID — в режиме анонима панель видна, инпуты недоступны */}
+              <div className={`form-fields-client ${isAnonymous ? 'form-fields-client-disabled' : ''}`}>
               <div className="form-row">
                 <div className="input-group">
                   <label>Имя (необязательно)</label>
@@ -658,7 +641,7 @@ const NewClientPage = () => {
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
-                    disabled={loading}
+                    disabled={loading || isAnonymous}
                   />
                 </div>
                 <div className="input-group">
@@ -668,7 +651,7 @@ const NewClientPage = () => {
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
-                    disabled={loading}
+                    disabled={loading || isAnonymous}
                   />
                 </div>
               </div>
@@ -680,7 +663,7 @@ const NewClientPage = () => {
                     name="middleName"
                     value={formData.middleName}
                     onChange={handleChange}
-                    disabled={loading}
+                    disabled={loading || isAnonymous}
                   />
                 </div>
                 <div className="input-group">
@@ -690,13 +673,12 @@ const NewClientPage = () => {
                     name="clientId"
                     value={formData.clientId}
                     onChange={handleChange}
-                    disabled={loading}
+                    disabled={loading || isAnonymous}
                   />
                 </div>
               </div>
-              </>
-              )}
-              <div className="form-row">
+              </div>
+              <div className="form-row form-row-price-anonymous">
                 <div className="input-group">
                   <label>{isAnonymous ? 'Цена (или выберите товары)' : 'Цена (необязательно)'}</label>
                   <input
@@ -709,6 +691,23 @@ const NewClientPage = () => {
                     disabled={loading}
                   />
                 </div>
+                <label className="anonymous-checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={isAnonymous}
+                    onChange={(e) => {
+                      setIsAnonymous(e.target.checked)
+                      if (e.target.checked) {
+                        setCheckedClient(null)
+                        setSearchQuery('')
+                        setSearchResults([])
+                        setDiscountInfo(null)
+                      }
+                    }}
+                    disabled={loading}
+                  />
+                  <span>Аноним (заказ без регистрации клиента)</span>
+                </label>
               </div>
 
               {!isAnonymous && checkedClient && (
@@ -760,6 +759,7 @@ const NewClientPage = () => {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       </div>

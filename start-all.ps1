@@ -49,7 +49,7 @@ Write-Host "   Backend будет запущен в отдельном окне"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendPath'; npm start"
 
 Start-Sleep -Seconds 2
-Write-Host "✅ Backend запущен на http://localhost:3001" -ForegroundColor Green
+Write-Host "✅ Backend запущен на http://localhost:3000" -ForegroundColor Green
 
 # Проверка зависимостей frontend
 Write-Host ""
@@ -81,7 +81,7 @@ Write-Host "   Система запущена!" -ForegroundColor Green
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "📋 Информация:" -ForegroundColor Yellow
-Write-Host "   Backend API: http://localhost:3001" -ForegroundColor White
+Write-Host "   Backend API: http://localhost:3000" -ForegroundColor White
 Write-Host "   Frontend: http://localhost:8080" -ForegroundColor White
 Write-Host "   PostgreSQL: localhost:5432" -ForegroundColor White
 Write-Host ""

@@ -28,7 +28,7 @@ const formatDateForResponse = (dateString) => {
 };
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
@@ -179,6 +179,28 @@ app.get('/api/clients', verifyAccessToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка получения клиентов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Статистика по всей БД: всего клиентов, Gold, Standart
+app.get('/api/clients/stats', verifyAccessToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status = 'gold')::int AS gold,
+        COUNT(*) FILTER (WHERE status IS NULL OR status != 'gold')::int AS standart
+      FROM clients
+    `);
+    const row = result.rows[0];
+    res.json({
+      total: row.total,
+      gold: row.gold,
+      standart: row.standart
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики клиентов:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -717,7 +739,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
   }
 });
 
-// Оформление замены: возврат старого заказа + новый заказ
+// Оформление замены: обновить тот же заказ (товары и сумму), без новой записи в истории
 app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -726,13 +748,13 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
 
     if (!returnTransactionId || !Number(returnTransactionId)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Укажите ID заказа для возврата' });
+      return res.status(400).json({ error: 'Укажите ID заказа для замены' });
     }
 
     const priceFloat = parseFloat(price);
     if (!Number.isFinite(priceFloat) || priceFloat <= 0) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Укажите корректную сумму нового заказа' });
+      return res.status(400).json({ error: 'Укажите корректную сумму заказа' });
     }
 
     const origResult = await client.query(
@@ -741,7 +763,7 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
     );
     if (origResult.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Заказ для возврата не найден' });
+      return res.status(404).json({ error: 'Заказ не найден' });
     }
     const original = origResult.rows[0];
     const clientId = original.client_id;
@@ -752,19 +774,15 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
     const discount = hasDiscount ? 10 : 0;
     const finalAmount = discount > 0 ? priceFloat * 0.9 : priceFloat;
 
-    // Пометить исходный заказ как возврат (внутренняя пометка для связи с заменой)
+    // Обновить тот же заказ: сумма и оставляем operation_type как продажа
     await client.query(
-      "UPDATE transactions SET operation_type = 'return' WHERE id = $1",
-      [returnTransactionId]
+      `UPDATE transactions SET amount = $1, discount = $2, final_amount = $3, operation_type = COALESCE(NULLIF(operation_type, 'return'), 'sale')
+       WHERE id = $4`,
+      [priceFloat, discount, finalAmount, returnTransactionId]
     );
 
-    // Создать новый заказ-замену (для анонимных — client_id = null)
-    const newTx = await client.query(
-      `INSERT INTO transactions (client_id, amount, discount, final_amount, operation_type, replacement_of_transaction_id)
-       VALUES ($1, $2, $3, $4, 'replacement', $5) RETURNING id`,
-      [clientId, priceFloat, discount, finalAmount, returnTransactionId]
-    );
-    const newTransactionId = newTx.rows[0].id;
+    // Удалить старые позиции и вставить новые
+    await client.query('DELETE FROM transaction_items WHERE transaction_id = $1', [returnTransactionId]);
 
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
@@ -772,7 +790,7 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
           `INSERT INTO transaction_items (transaction_id, product_id, product_name, product_price, quantity)
            VALUES ($1, $2, $3, $4, $5)`,
           [
-            newTransactionId,
+            returnTransactionId,
             item.productId || item.product_id || '',
             item.productName || item.product_name || '',
             parseFloat(item.productPrice || item.product_price || 0),
@@ -797,24 +815,23 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
 
     await client.query('COMMIT');
 
-    const newOrder = await pool.query(
+    const updatedOrder = await pool.query(
       `SELECT t.*, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
        FROM transactions t
        LEFT JOIN clients c ON t.client_id = c.id
        WHERE t.id = $1`,
-      [newTransactionId]
+      [returnTransactionId]
     );
-    const newOrderRow = newOrder.rows[0];
-    const newItems = await pool.query(
+    const updatedRow = updatedOrder.rows[0];
+    const updatedItems = await pool.query(
       'SELECT product_id, product_name, product_price, quantity FROM transaction_items WHERE transaction_id = $1 ORDER BY id',
-      [newTransactionId]
+      [returnTransactionId]
     );
-    newOrderRow.items = newItems.rows;
+    updatedRow.items = updatedItems.rows;
 
     res.json({
       success: true,
-      return_transaction_id: Number(returnTransactionId),
-      replacement_transaction: newOrderRow
+      transaction: updatedRow
     });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
