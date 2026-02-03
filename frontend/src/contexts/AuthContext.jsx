@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [accessToken, setAccessToken] = useState(localStorage.getItem('accessToken'))
   const [refreshToken, setRefreshToken] = useState(localStorage.getItem('refreshToken'))
   const [loading, setLoading] = useState(true)
+  const [showHelloAfterLogin, setShowHelloAfterLogin] = useState(false)
 
   useEffect(() => {
     if (accessToken) {
@@ -40,6 +41,7 @@ export const AuthProvider = ({ children }) => {
       setAccessToken(data.accessToken)
       setRefreshToken(data.refreshToken)
       setUser(data.user)
+      setShowHelloAfterLogin(true)
       
       localStorage.setItem('accessToken', data.accessToken)
       localStorage.setItem('refreshToken', data.refreshToken)
@@ -50,6 +52,8 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: error.message }
     }
   }
+
+  const clearShowHello = () => setShowHelloAfterLogin(false)
 
   const logout = () => {
     setAccessToken(null)
@@ -84,7 +88,9 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     refreshAccessToken,
-    loading
+    loading,
+    showHelloAfterLogin,
+    clearShowHello
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

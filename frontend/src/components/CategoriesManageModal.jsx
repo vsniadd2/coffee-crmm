@@ -98,6 +98,7 @@ const CategoriesManageModal = ({ onClose }) => {
         await adminProductsService.createCategory({
           name: formData.name,
           color: DEFAULT_CATEGORY_COLOR,
+          icon: '/img/coffee-beans-filled-roast-brew-svgrepo-com.svg',
           displayOrder: 0
         })
         setAddCategory(false)

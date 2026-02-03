@@ -1008,7 +1008,7 @@ app.get('/api/admin/transactions/:id', verifyAccessToken, async (req, res) => {
 app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
   try {
     const categoriesResult = await pool.query(
-      'SELECT id, name, display_order FROM product_categories ORDER BY display_order, id'
+      'SELECT id, name, icon, display_order FROM product_categories ORDER BY display_order, id'
     );
     const categories = categoriesResult.rows;
     const tree = [];
@@ -1042,6 +1042,7 @@ app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
       tree.push({
         id: cat.id,
         name: cat.name,
+        icon: cat.icon || null,
         display_order: cat.display_order,
         subcategories: subcategoriesTree
       });

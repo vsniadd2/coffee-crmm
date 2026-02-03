@@ -48,6 +48,7 @@ export async function getProductsTree() {
     productCategories[cat.id] = {
       id: cat.id,
       name: cat.name,
+      icon: cat.icon || null,
       subcategories: subcategoriesMap
     }
   })

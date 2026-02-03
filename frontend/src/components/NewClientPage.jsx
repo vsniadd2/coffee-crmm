@@ -165,70 +165,6 @@ const NewClientPage = () => {
     setCheckedClient(client)
     setSearchQuery('')
     setSearchResults([])
-
-    // useEffect автоматически пересчитает скидку при изменении checkedClient
-
-    // Автоматически оформляем заказ, если есть товары
-    if (productsTotal > 0) {
-      await handleAutoSubmit(client)
-    }
-  }
-
-  // Автоматическое оформление заказа
-  const handleAutoSubmit = async (client) => {
-    setLoading(true)
-    try {
-      const price = productsTotal
-      const status = client.status || 'standart'
-      const hasDiscount = status === 'gold'
-      
-      // Показываем информацию о скидке
-      if (hasDiscount) {
-        setDiscountInfo({
-          hasDiscount: true,
-          originalPrice: price,
-          finalPrice: price * 0.9,
-          discount: 10
-        })
-      }
-
-      const items = Object.values(selectedProducts).map(item => ({
-        productId: item.product.id,
-        productName: item.product.name,
-        productPrice: item.product.price,
-        quantity: item.quantity
-      }))
-
-      const purchaseResult = await addPurchase(client.id, price, items)
-      if (purchaseResult.success) {
-        showNotification('Заказ успешно оформлен!', 'success')
-        refreshAll()
-        
-        // Очищаем форму, товары и корзину
-        setTimeout(() => {
-          setFormData({
-            firstName: '',
-            lastName: '',
-            middleName: '',
-            clientId: '',
-            price: ''
-          })
-          setSelectedProducts({})
-          setProductsTotal(0)
-          setCheckedClient(null)
-          setDiscountInfo(null)
-          setSearchQuery('')
-          setSearchResults([])
-          setProductSelectorKey(k => k + 1)
-        }, 1000)
-      } else {
-        showNotification(purchaseResult.error || 'Ошибка при оформлении заказа', 'error')
-      }
-    } catch (error) {
-      showNotification(error.message || 'Ошибка при оформлении заказа', 'error')
-    } finally {
-      setLoading(false)
-    }
   }
 
   const handleChange = (e) => {
@@ -320,6 +256,28 @@ const NewClientPage = () => {
     setCheckedClient(null)
 
     try {
+      // Для неанонимного заказа проверяем обязательные поля: Имя, Фамилия, ID
+      if (!isAnonymous) {
+        const firstName = (formData.firstName || '').trim()
+        const lastName = (formData.lastName || '').trim()
+        const clientId = (formData.clientId || '').trim()
+        if (!firstName) {
+          showNotification('Укажите имя', 'error')
+          setLoading(false)
+          return
+        }
+        if (!lastName) {
+          showNotification('Укажите фамилию', 'error')
+          setLoading(false)
+          return
+        }
+        if (!clientId) {
+          showNotification('Укажите ID (телефон или строку)', 'error')
+          setLoading(false)
+          return
+        }
+      }
+
       // Анонимный заказ — только цена и товары, без клиента
       if (isAnonymous) {
         const price = productsTotal > 0 ? productsTotal : (parseFloat(formData.price) || 0)
@@ -635,7 +593,7 @@ const NewClientPage = () => {
               <div className={`form-fields-client ${isAnonymous ? 'form-fields-client-disabled' : ''}`}>
               <div className="form-row">
                 <div className="input-group">
-                  <label>Имя (необязательно)</label>
+                  <label>Имя</label>
                   <input
                     type="text"
                     name="firstName"
@@ -645,7 +603,7 @@ const NewClientPage = () => {
                   />
                 </div>
                 <div className="input-group">
-                  <label>Фамилия (необязательно)</label>
+                  <label>Фамилия</label>
                   <input
                     type="text"
                     name="lastName"
@@ -657,7 +615,7 @@ const NewClientPage = () => {
               </div>
               <div className="form-row">
                 <div className="input-group">
-                  <label>Отчество</label>
+                  <label>Отчество (необязательно)</label>
                   <input
                     type="text"
                     name="middleName"
@@ -667,7 +625,7 @@ const NewClientPage = () => {
                   />
                 </div>
                 <div className="input-group">
-                  <label>ID (телефон или строка) (необязательно)</label>
+                  <label>ID (телефон или строка)</label>
                   <input
                     type="text"
                     name="clientId"
@@ -680,7 +638,7 @@ const NewClientPage = () => {
               </div>
               <div className="form-row form-row-price-anonymous">
                 <div className="input-group">
-                  <label>{isAnonymous ? 'Цена (или выберите товары)' : 'Цена (необязательно)'}</label>
+                  <label>{isAnonymous ? 'Цена (или выберите товары)' : 'Цена'}</label>
                   <input
                     type="number"
                     name="price"

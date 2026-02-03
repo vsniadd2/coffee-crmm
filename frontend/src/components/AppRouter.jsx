@@ -8,10 +8,11 @@ import ClientModal from './ClientModal'
 import PurchaseModal from './PurchaseModal'
 import NewClientPage from './NewClientPage'
 import Footer from './Footer'
+import HelloOverlay from './HelloOverlay'
 import './Dashboard.css'
 
 const AppRouter = () => {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, showHelloAfterLogin, clearShowHello } = useAuth()
   const [currentPage, setCurrentPage] = useState(() => {
     // Загружаем последнюю открытую страницу из localStorage
     try {
@@ -66,22 +67,27 @@ const AppRouter = () => {
 
   return (
     <div className="main-screen">
-      <Header
-        onAddClient={() => setIsModalOpen(true)}
-        onSelectClient={(client) => setSelectedClient(client)}
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-      />
-      <main className="main-content">
-        {renderPage()}
-      </main>
-      <Footer />
-      {isModalOpen && (
-        <ClientModal onClose={() => setIsModalOpen(false)} />
+      {showHelloAfterLogin && (
+        <HelloOverlay onEnd={clearShowHello} />
       )}
-      {selectedClient && (
-        <PurchaseModal client={selectedClient} onClose={() => setSelectedClient(null)} />
-      )}
+      <div className={`main-screen-content${showHelloAfterLogin ? ' hello-animation-active' : ''}`}>
+        <Header
+          onAddClient={() => setIsModalOpen(true)}
+          onSelectClient={(client) => setSelectedClient(client)}
+          currentPage={currentPage}
+          onNavigate={handleNavigate}
+        />
+        <main className="main-content">
+          {renderPage()}
+        </main>
+        <Footer />
+        {isModalOpen && (
+          <ClientModal onClose={() => setIsModalOpen(false)} />
+        )}
+        {selectedClient && (
+          <PurchaseModal client={selectedClient} onClose={() => setSelectedClient(null)} />
+        )}
+      </div>
     </div>
   )
 }
