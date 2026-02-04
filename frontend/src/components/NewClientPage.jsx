@@ -32,7 +32,6 @@ const NewClientPage = () => {
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState(null)
-  const [isAnonymous, setIsAnonymous] = useState(false)
   const [productSelectorKey, setProductSelectorKey] = useState(0)
   const debounceRef = useRef(null)
   const discountDebounceRef = useRef(null)
@@ -46,6 +45,13 @@ const NewClientPage = () => {
   const { refreshAll } = useDataRefresh()
 
   const trimmedSearchQuery = useMemo(() => searchQuery.trim(), [searchQuery])
+
+  // Анонимный режим: все поля клиента (имя, фамилия, отчество, ID) пустые
+  const isAnonymousForm = useMemo(() => {
+    const f = formData
+    return !(f.firstName || '').trim() && !(f.lastName || '').trim() &&
+           !(f.middleName || '').trim() && !(f.clientId || '').trim()
+  }, [formData])
 
   // Сохраняем поисковый запрос в localStorage
   useEffect(() => {
@@ -256,11 +262,15 @@ const NewClientPage = () => {
     setCheckedClient(null)
 
     try {
+      // Аноним: все поля клиента пустые (имя, фамилия, отчество, ID)
+      const firstName = (formData.firstName || '').trim()
+      const lastName = (formData.lastName || '').trim()
+      const middleName = (formData.middleName || '').trim()
+      const clientId = (formData.clientId || '').trim()
+      const isAnonymous = !firstName && !lastName && !middleName && !clientId
+
       // Для неанонимного заказа проверяем обязательные поля: Имя, Фамилия, ID
       if (!isAnonymous) {
-        const firstName = (formData.firstName || '').trim()
-        const lastName = (formData.lastName || '').trim()
-        const clientId = (formData.clientId || '').trim()
         if (!firstName) {
           showNotification('Укажите имя', 'error')
           setLoading(false)
@@ -278,7 +288,7 @@ const NewClientPage = () => {
         }
       }
 
-      // Анонимный заказ — только цена и товары, без клиента
+      // Анонимный заказ — только цена и товары, без клиента (все поля клиента пустые)
       if (isAnonymous) {
         const price = productsTotal > 0 ? productsTotal : (parseFloat(formData.price) || 0)
         if (price <= 0) {
@@ -332,9 +342,9 @@ const NewClientPage = () => {
 
       // Проверка существующего клиента по clientId, если указан
       let existingClient = null
-      if (formData.clientId && formData.clientId.trim()) {
+      if (clientId) {
         try {
-          existingClient = await clientService.getById(formData.clientId.trim())
+          existingClient = await clientService.getById(clientId)
           
           if (existingClient) {
             // Клиент найден - рассчитываем скидку и показываем информацию
@@ -499,19 +509,18 @@ const NewClientPage = () => {
           <div className="new-client-right-column">
             {/* Шапка колонки: подпись поиска (без чекбокса — он у поля «Цена») */}
             <div className="new-client-column-header new-client-column-header-right">
-              {!isAnonymous && (
+              {!isAnonymousForm && (
                 <span className="client-search-label-inline">Поиск клиента (для программы лояльности)</span>
               )}
-              {isAnonymous && (
+              {isAnonymousForm && (
                 <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)', width: '100%' }}>
-                  Достаточно указать цену или выбрать товары из каталога.
+                  Достаточно указать цену или выбрать товары из каталога — заказ будет анонимным.
                 </p>
               )}
             </div>
 
             <div className="new-client-right-content">
-            {/* Поиск клиентов — в режиме анонима панель видна, но инпуты недоступны */}
-            <div className={`client-search-section ${isAnonymous ? 'client-search-section-disabled' : ''}`}>
+            <div className="client-search-section">
               <div className="client-search-wrapper">
                 <input
                   ref={searchInputRef}
@@ -535,7 +544,7 @@ const NewClientPage = () => {
                   onBlur={() => {
                     wasFocusedRef.current = false
                   }}
-                  disabled={loading || isAnonymous}
+                  disabled={loading}
                 />
                 {searchQuery && (
                   <button
@@ -589,8 +598,7 @@ const NewClientPage = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="new-client-form">
-              {/* Поля имени/фамилии/ID — в режиме анонима панель видна, инпуты недоступны */}
-              <div className={`form-fields-client ${isAnonymous ? 'form-fields-client-disabled' : ''}`}>
+              <div className="form-fields-client">
               <div className="form-row">
                 <div className="input-group">
                   <label>Имя</label>
@@ -599,7 +607,7 @@ const NewClientPage = () => {
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
-                    disabled={loading || isAnonymous}
+                    disabled={loading}
                   />
                 </div>
                 <div className="input-group">
@@ -609,7 +617,7 @@ const NewClientPage = () => {
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
-                    disabled={loading || isAnonymous}
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -621,7 +629,7 @@ const NewClientPage = () => {
                     name="middleName"
                     value={formData.middleName}
                     onChange={handleChange}
-                    disabled={loading || isAnonymous}
+                    disabled={loading}
                   />
                 </div>
                 <div className="input-group">
@@ -631,14 +639,14 @@ const NewClientPage = () => {
                     name="clientId"
                     value={formData.clientId}
                     onChange={handleChange}
-                    disabled={loading || isAnonymous}
+                    disabled={loading}
                   />
                 </div>
               </div>
               </div>
               <div className="form-row form-row-price-anonymous">
                 <div className="input-group">
-                  <label>{isAnonymous ? 'Цена (или выберите товары)' : 'Цена'}</label>
+                  <label>{isAnonymousForm ? 'Цена (или выберите товары)' : 'Цена'}</label>
                   <input
                     type="number"
                     name="price"
@@ -649,26 +657,9 @@ const NewClientPage = () => {
                     disabled={loading}
                   />
                 </div>
-                <label className="anonymous-checkbox-inline">
-                  <input
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(e) => {
-                      setIsAnonymous(e.target.checked)
-                      if (e.target.checked) {
-                        setCheckedClient(null)
-                        setSearchQuery('')
-                        setSearchResults([])
-                        setDiscountInfo(null)
-                      }
-                    }}
-                    disabled={loading}
-                  />
-                  <span>Аноним (заказ без регистрации клиента)</span>
-                </label>
               </div>
 
-              {!isAnonymous && checkedClient && (
+              {!isAnonymousForm && checkedClient && (
                 <div className="client-found-info">
                   <div style={{ fontWeight: '600', marginBottom: 6, fontSize: '0.95rem' }}>
                     ✓ Клиент найден: {checkedClient.first_name} {checkedClient.last_name}
@@ -681,7 +672,7 @@ const NewClientPage = () => {
               )}
 
               {/* Показываем информацию о цене и скидке */}
-              {!isAnonymous && checkedClient && (productsTotal > 0 || parseFloat(formData.price) > 0) && (
+              {!isAnonymousForm && checkedClient && (productsTotal > 0 || parseFloat(formData.price) > 0) && (
                 <div className="discount-preview" style={{ marginTop: 12 }}>
                   {discountInfo && discountInfo.hasDiscount ? (
                     <>

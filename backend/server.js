@@ -10,22 +10,13 @@ const {
   requireAdmin
 } = require('./auth');
 
-// Функция для конвертации даты в МСК (UTC+3)
-const convertToMoscowTime = (dateString) => {
-  if (!dateString) return null;
-  const date = new Date(dateString);
-  // PostgreSQL возвращает даты в UTC, конвертируем в МСК (UTC+3)
-  const moscowOffset = 3 * 60 * 60 * 1000; // 3 часа в миллисекундах
-  return new Date(date.getTime() + moscowOffset);
-};
-
-// Функция для форматирования даты с учетом МСК
-const formatDateForResponse = (dateString) => {
-  if (!dateString) return null;
-  // PostgreSQL возвращает строку в формате ISO, просто возвращаем как есть
-  // Фронтенд будет правильно интерпретировать с учетом timezone
-  return dateString;
-};
+// Время в ответах API — всегда МСК/Минск (UTC+3)
+// БД хранит время в московском (сессия SET timezone = 'Europe/Moscow', CURRENT_TIMESTAMP даёт МСК)
+// Просто форматируем сохранённое значение и добавляем +03:00
+const CREATED_AT_MSK_SQL = "to_char(t.created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
+const TRANSACTION_SELECT_MSK = `t.id, t.client_id, t.amount, t.discount, t.final_amount, ${CREATED_AT_MSK_SQL}, t.operation_type, t.replacement_of_transaction_id`;
+// Для таблицы clients (без алиаса)
+const CREATED_AT_MSK_CLIENT_SQL = "to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -124,7 +115,7 @@ app.get('/api/clients', verifyAccessToken, async (req, res) => {
         client_id,
         status,
         total_spent,
-        created_at
+        ${CREATED_AT_MSK_CLIENT_SQL}
       FROM clients
     `;
 
@@ -228,7 +219,7 @@ app.get('/api/clients/search', verifyAccessToken, async (req, res) => {
           client_id,
           status,
           total_spent,
-          created_at
+          ${CREATED_AT_MSK_CLIENT_SQL}
         FROM clients
         WHERE
           first_name ILIKE $1 OR
@@ -295,7 +286,9 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
     const clientResult = await pool.query(`
       INSERT INTO clients (first_name, last_name, middle_name, client_id, total_spent, status)
       VALUES ($1, $2, $3, $4, $5, 'standart')
-      RETURNING *
+      RETURNING id, first_name, last_name, middle_name, client_id, status, total_spent,
+        to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS"+03:00"') as created_at,
+        updated_at
     `, [firstName, lastName, middleName, clientId ?? null, 0]);
 
     const client = clientResult.rows[0];
@@ -502,7 +495,10 @@ app.post('/api/purchases/anonymous', verifyAccessToken, async (req, res) => {
 app.get('/api/admin/clients/:id', verifyAccessToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM clients WHERE id = $1', [id]);
+    const result = await pool.query(
+      `SELECT id, first_name, last_name, middle_name, client_id, status, total_spent, ${CREATED_AT_MSK_CLIENT_SQL}, updated_at FROM clients WHERE id = $1`,
+      [id]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Клиент не найден' });
     }
@@ -556,7 +552,7 @@ app.get('/api/clients/:clientId', verifyAccessToken, async (req, res) => {
     const { clientId } = req.params;
 
     const result = await pool.query(
-      'SELECT * FROM clients WHERE client_id = $1',
+      `SELECT id, first_name, last_name, middle_name, client_id, status, total_spent, ${CREATED_AT_MSK_CLIENT_SQL}, updated_at FROM clients WHERE client_id = $1`,
       [clientId]
     );
 
@@ -588,7 +584,7 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
         t.amount,
         t.discount,
         t.final_amount,
-        t.created_at,
+        ${CREATED_AT_MSK_SQL},
         t.operation_type,
         c.first_name,
         c.last_name,
@@ -675,7 +671,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT t.*, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+      `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
        FROM transactions t
        LEFT JOIN clients c ON t.client_id = c.id
        WHERE t.id = $1`,
@@ -702,7 +698,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
     const opType = (purchase.operation_type || 'sale').toLowerCase();
     if (opType === 'return' && purchase.id) {
       const repl = await pool.query(
-        `SELECT t.*, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+        `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
          FROM transactions t
          LEFT JOIN clients c ON t.client_id = c.id
          WHERE t.replacement_of_transaction_id = $1`,
@@ -717,7 +713,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
       }
     } else if (opType === 'replacement' && purchase.replacement_of_transaction_id) {
       const ret = await pool.query(
-        `SELECT t.*, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+        `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
          FROM transactions t
          LEFT JOIN clients c ON t.client_id = c.id
          WHERE t.id = $1`,

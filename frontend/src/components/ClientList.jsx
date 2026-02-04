@@ -40,6 +40,7 @@ const ClientList = ({ onSelectClient }) => {
   const savedScrollPositionRef = useRef(0)
   const isUserTypingRef = useRef(false)
   const hasLoadedOnceRef = useRef(false)
+  const hasStatsLoadedRef = useRef(false)
   const limit = 20
 
   const { clients, loading, error, pagination, loadClients } = useClients({ 
@@ -162,16 +163,18 @@ const ClientList = ({ onSelectClient }) => {
     }
   }, [clients])
 
-  // Загрузка глобальной статистики по всей БД
+  // Загрузка глобальной статистики. Показываем «…» только при самой первой загрузке — при любых обновлениях числа меняются без дёргания.
   const loadGlobalStats = useCallback(async () => {
-    setStatsLoading(true)
+    const isFirstLoad = !hasStatsLoadedRef.current
+    if (isFirstLoad) setStatsLoading(true)
     try {
       const stats = await clientService.getStats()
       setGlobalStats(stats)
+      hasStatsLoadedRef.current = true
     } catch {
       setGlobalStats(null)
     } finally {
-      setStatsLoading(false)
+      if (isFirstLoad) setStatsLoading(false)
     }
   }, [])
 
@@ -416,7 +419,7 @@ const ClientList = ({ onSelectClient }) => {
                       </span>
                     </td>
                     <td className="num mono" data-label="Сумма">{Number.parseFloat(client.total_spent || 0).toFixed(2)} BYN</td>
-                    <td className="mono" data-label="Дата">{formatMinskDateTime(client.created_at)}</td>
+                    <td className="date-cell" data-label="Дата">{formatMinskDateTime(client.created_at)}</td>
                     <td className="clients-table-actions-td" data-label="">
                       <button
                         type="button"

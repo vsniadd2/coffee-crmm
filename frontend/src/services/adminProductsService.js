@@ -54,16 +54,32 @@ export const adminProductsService = {
     return request(`${API_URL}/admin/products/subcategories/${subcategoryId}/products`)
   },
   createProduct(data) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 90000)
     return request(`${API_URL}/admin/products`, {
       method: 'POST',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: controller.signal
     })
+      .finally(() => clearTimeout(timeoutId))
+      .catch((err) => {
+        if (err?.name === 'AbortError') throw new Error('Запрос занял слишком много времени. Уменьшите размер изображения и попробуйте снова.')
+        throw err
+      })
   },
   updateProduct(id, data) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 90000)
     return request(`${API_URL}/admin/products/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: controller.signal
     })
+      .finally(() => clearTimeout(timeoutId))
+      .catch((err) => {
+        if (err?.name === 'AbortError') throw new Error('Запрос занял слишком много времени. Уменьшите размер изображения и попробуйте снова.')
+        throw err
+      })
   },
   deleteProduct(id) {
     return request(`${API_URL}/admin/products/${id}`, { method: 'DELETE' })

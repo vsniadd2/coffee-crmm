@@ -322,6 +322,12 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* Дата — без моноширинного шрифта, чтобы ноль отображался обычным символом 0, а не Ø */
+.clients-table td.date-cell {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .clients-table tbody td:nth-child(4).mono {
     text-align: center !important;
 }
@@ -341,7 +347,8 @@
     text-overflow: ellipsis;
 }
 
-.clients-table tbody td:nth-child(7).mono {
+.clients-table tbody td:nth-child(7).mono,
+.clients-table tbody td:nth-child(7).date-cell {
     text-align: right !important;
 }
 

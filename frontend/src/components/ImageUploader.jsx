@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import './ImageUploader.css'
 
-const ImageUploader = ({ onImageSelect, currentImage, maxSizeMB = 10 }) => {
+const ImageUploader = ({ onImageSelect, currentImage, maxSizeMB = 10, disabled = false }) => {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadError, setUploadError] = useState(null)
   const fileInputRef = useRef(null)
@@ -27,7 +27,7 @@ const ImageUploader = ({ onImageSelect, currentImage, maxSizeMB = 10 }) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
-
+    if (disabled) return
     const files = e.dataTransfer.files
     if (files && files.length > 0) {
       const file = files[0]
@@ -36,10 +36,12 @@ const ImageUploader = ({ onImageSelect, currentImage, maxSizeMB = 10 }) => {
   }
 
   const handleFileSelect = (e) => {
+    if (disabled) return
     const file = e.target.files?.[0]
     if (file) {
       processFile(file)
     }
+    e.target.value = ''
   }
 
   const processFile = (file) => {
@@ -80,13 +82,15 @@ const ImageUploader = ({ onImageSelect, currentImage, maxSizeMB = 10 }) => {
 
       {!currentImage ? (
         <div
-          className={`image-uploader-dropzone ${isDragging ? 'dragging' : ''}`}
+          className={`image-uploader-dropzone ${isDragging ? 'dragging' : ''} ${disabled ? 'image-uploader-disabled' : ''}`}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          style={{ pointerEvents: disabled ? 'none' : undefined, opacity: disabled ? 0.7 : 1 }}
         >
           <div className="image-uploader-content">
+            {disabled && <p className="image-uploader-loading-text">Обработка изображения...</p>}
             <svg
               className="image-uploader-icon"
               fill="none"

@@ -74,6 +74,17 @@
   margin: 0;
 }
 
+.image-uploader-loading-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.image-uploader-dropzone.image-uploader-disabled {
+  cursor: wait;
+}
+
 .image-uploader-preview-container {
   position: relative;
   display: flex;

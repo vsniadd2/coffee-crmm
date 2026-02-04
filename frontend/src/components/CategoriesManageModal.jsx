@@ -27,6 +27,7 @@ const CategoriesManageModal = ({ onClose }) => {
   const [formData, setFormData] = useState({ name: '', displayOrder: 0, price: '', subcategoryId: '', categoryId: '', imageUrl: '' })
   const [imagePreview, setImagePreview] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [imageCompressing, setImageCompressing] = useState(false)
 
   const loadCategories = useCallback(async () => {
     try {
@@ -143,66 +144,91 @@ const CategoriesManageModal = ({ onClose }) => {
     }
   }
 
-  // Функция для сжатия изображения
+  // Функция для сжатия изображения (устойчивая к разным форматам и ошибкам)
   const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.8) => {
+    const MAX_CANVAS = 4096 // лимит размеров canvas в большинстве браузеров
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Не удалось прочитать файл'))
       reader.onload = (e) => {
+        const dataUrl = e.target?.result
+        if (!dataUrl || typeof dataUrl !== 'string') {
+          reject(new Error('Не удалось прочитать файл'))
+          return
+        }
         const img = new Image()
+        img.onerror = () => reject(new Error('Не удалось загрузить изображение (формат может не поддерживаться)'))
         img.onload = () => {
-          const canvas = document.createElement('canvas')
-          let width = img.width
-          let height = img.height
-
-          // Вычисляем новые размеры с сохранением пропорций
-          if (width > height) {
-            if (width > maxWidth) {
-              height = (height * maxWidth) / width
-              width = maxWidth
-            }
-          } else {
-            if (height > maxHeight) {
-              width = (width * maxHeight) / height
-              height = maxHeight
-            }
+          let width = img.naturalWidth || img.width
+          let height = img.naturalHeight || img.height
+          if (!width || !height) {
+            reject(new Error('Неверные размеры изображения'))
+            return
           }
-
+          // Масштабирование с сохранением пропорций
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height)
+            width = Math.round(width * ratio)
+            height = Math.round(height * ratio)
+          }
+          // Не превышаем лимит canvas
+          if (width > MAX_CANVAS || height > MAX_CANVAS) {
+            const scale = MAX_CANVAS / Math.max(width, height)
+            width = Math.round(width * scale)
+            height = Math.round(height * scale)
+          }
+          if (width < 1 || height < 1) {
+            reject(new Error('Изображение слишком маленькое'))
+            return
+          }
+          const canvas = document.createElement('canvas')
           canvas.width = width
           canvas.height = height
-
           const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Браузер не поддерживает обработку изображений'))
+            return
+          }
           ctx.drawImage(img, 0, 0, width, height)
-
-          // Конвертируем в base64 с заданным качеством
-          const base64String = canvas.toDataURL('image/jpeg', quality)
-          resolve(base64String)
+          try {
+            const base64String = canvas.toDataURL('image/jpeg', quality)
+            resolve(base64String)
+          } catch (jpegErr) {
+            try {
+              const base64String = canvas.toDataURL('image/png')
+              resolve(base64String)
+            } catch (pngErr) {
+              reject(new Error('Не удалось сжать изображение. Попробуйте другой файл (JPG или PNG).'))
+            }
+          }
         }
-        img.onerror = reject
-        img.src = e.target.result
+        img.src = dataUrl
       }
-      reader.onerror = reject
       reader.readAsDataURL(file)
     })
   }
 
   // Функция для обработки выбранного файла из ImageUploader
   const handleImageSelect = async (file) => {
+    setError(null)
     if (file.size > 10 * 1024 * 1024) {
       setError('Размер файла не должен превышать 10 МБ')
       return
     }
+    if (!file.type.startsWith('image/')) {
+      setError('Выберите файл изображения (JPG, PNG, GIF)')
+      return
+    }
 
+    setImageCompressing(true)
     try {
-      setSaving(true)
-      // Сжимаем изображение перед сохранением
       const compressedBase64 = await compressImage(file, 800, 800, 0.85)
       setFormData(prev => ({ ...prev, imageUrl: compressedBase64 }))
       setImagePreview(compressedBase64)
-      setError(null)
     } catch (err) {
-      setError('Ошибка обработки изображения: ' + (err.message || 'Неизвестная ошибка'))
+      setError(err?.message || 'Ошибка обработки изображения. Попробуйте другой файл.')
     } finally {
-      setSaving(false)
+      setImageCompressing(false)
     }
   }
 
@@ -445,6 +471,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                                   onImageSelect={handleImageSelect}
                                                   currentImage={imagePreview}
                                                   maxSizeMB={10}
+                                                  disabled={imageCompressing}
                                                 />
                                                 {imagePreview && (
                                                   <button 
@@ -469,7 +496,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                                 )}
                                               </div>
                                               <div className="categories-manage-form-actions">
-                                                <button type="button" className="categories-manage-btn-save" onClick={handleSaveProduct} disabled={saving || !formData.name.trim()}>Сохранить</button>
+                                                <button type="button" className="categories-manage-btn-save" onClick={handleSaveProduct} disabled={saving || imageCompressing || !formData.name.trim()}>Сохранить</button>
                                                 <button type="button" className="categories-manage-btn-cancel" onClick={() => { setAddProduct(null); setImagePreview(null) }}>Отмена</button>
                                               </div>
                                             </div>
@@ -496,6 +523,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                                         onImageSelect={handleImageSelect}
                                                         currentImage={imagePreview || prod.image_data}
                                                         maxSizeMB={10}
+                                                        disabled={imageCompressing}
                                                       />
                                                       {(imagePreview || prod.image_data) && (
                                                         <button 
@@ -520,7 +548,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                                       )}
                                                     </div>
                                                     <div className="categories-manage-form-actions">
-                                                      <button type="button" className="categories-manage-btn-save" onClick={handleSaveProduct} disabled={saving}>Сохранить</button>
+                                                      <button type="button" className="categories-manage-btn-save" onClick={handleSaveProduct} disabled={saving || imageCompressing}>Сохранить</button>
                                                       <button type="button" className="categories-manage-btn-cancel" onClick={() => { setEditProduct(null); setImagePreview(null) }}>Отмена</button>
                                                     </div>
                                                   </div>

@@ -41,7 +41,9 @@
     font-size: 2rem;
     font-weight: bold;
     font-variant-numeric: tabular-nums;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    min-width: 4ch;
+    display: inline-block;
+    text-align: left;
 }
 
 .stat-value:has(+ .stat-value-changed) {
