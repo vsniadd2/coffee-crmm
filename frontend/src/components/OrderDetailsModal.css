@@ -590,6 +590,11 @@
   border-radius: var(--radius-sm);
 }
 
+.order-details-item--employee .order-details-employee-badge {
+  color: var(--accent-purple);
+  font-weight: 600;
+}
+
 .order-details-item--total {
   background: var(--bg-soft);
   border: 1px solid var(--border);

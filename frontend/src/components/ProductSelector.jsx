@@ -63,7 +63,11 @@ const ProductSelector = ({ onProductsChange, initialTotal = 0 }) => {
       Object.values(category.subcategories || {}).forEach(subcategory => {
         (subcategory.products || []).forEach(product => {
           result.push({
-            product,
+            product: {
+              ...product,
+              categoryName: category.name,
+              subcategoryName: subcategory.name
+            },
             categoryName: category.name,
             subcategoryName: subcategory.name
           })

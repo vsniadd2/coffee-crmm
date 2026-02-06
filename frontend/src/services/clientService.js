@@ -73,11 +73,11 @@ export const clientService = {
     return response.json()
   },
 
-  async addPurchase(clientDbId, price, items = []) {
+  async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0) {
     const response = await fetch(`${API_URL}/clients/${clientDbId}/purchase`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ price, items })
+      body: JSON.stringify({ price, items, paymentMethod, employeeDiscount })
     })
 
     if (response.status === 403) {
@@ -92,11 +92,11 @@ export const clientService = {
     return response.json()
   },
 
-  async createAnonymousPurchase(price, items = []) {
+  async createAnonymousPurchase(price, items = [], paymentMethod = 'cash', employeeDiscount = 0) {
     const response = await fetch(`${API_URL}/purchases/anonymous`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ price, items })
+      body: JSON.stringify({ price, items, paymentMethod, employeeDiscount })
     })
 
     if (response.status === 403) {
@@ -121,7 +121,9 @@ export const clientService = {
         middleName: clientData.middleName,
         clientId: clientData.clientId,
         price: clientData.price,
-        items: clientData.items || []
+        items: clientData.items || [],
+        paymentMethod: clientData.paymentMethod || 'cash',
+        employeeDiscount: clientData.employeeDiscount || 0
       })
     })
 

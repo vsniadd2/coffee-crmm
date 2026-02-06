@@ -6,7 +6,10 @@ import Header from './Header'
 import ClientList from './ClientList'
 import ClientModal from './ClientModal'
 import PurchaseModal from './PurchaseModal'
+import CategoriesManageModal from './CategoriesManageModal'
 import NewClientPage from './NewClientPage'
+import StatsPage from './StatsPage'
+import CategoriesPage from './CategoriesPage'
 import Footer from './Footer'
 import HelloOverlay from './HelloOverlay'
 import './Dashboard.css'
@@ -16,7 +19,12 @@ const AppRouter = () => {
   const [currentPage, setCurrentPage] = useState(() => {
     // Загружаем последнюю открытую страницу из localStorage
     try {
-      return localStorage.getItem('currentPage') || 'new-client'
+      const savedPage = localStorage.getItem('currentPage') || 'new-client'
+      // Миграция старых значений страниц
+      if (savedPage === 'payment-stats' || savedPage === 'sales-stats' || savedPage === 'order-details' || savedPage === 'order-search') {
+        return 'stats'
+      }
+      return savedPage
     } catch {
       return 'new-client'
     }
@@ -59,6 +67,13 @@ const AppRouter = () => {
         return <ClientList onSelectClient={(client) => setSelectedClient(client)} />
       case 'purchase-history':
         return <PurchaseHistory />
+      case 'stats':
+      case 'payment-stats':
+      case 'sales-stats':
+      case 'order-details':
+        return <StatsPage />
+      case 'categories':
+        return <CategoriesPage />
       case 'new-client':
       default:
         return <NewClientPage />

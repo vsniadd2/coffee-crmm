@@ -3,6 +3,7 @@ import { useClients } from '../hooks/useClients'
 import { useNotification } from './NotificationProvider'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import ProductSelector from './ProductSelector'
+import PaymentMethodModal from './PaymentMethodModal'
 import { normalizeMiddleNameForDisplay, normalizeClientIdForDisplay } from '../utils/clientDisplay'
 import './PurchaseModal.css'
 
@@ -11,6 +12,8 @@ const PurchaseModal = ({ client, onClose }) => {
   const [loading, setLoading] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState({})
   const [productsTotal, setProductsTotal] = useState(0)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [pendingPurchaseData, setPendingPurchaseData] = useState(null)
   const { addPurchase } = useClients()
   const { showNotification } = useNotification()
   const { refreshAll } = useDataRefresh()
@@ -59,6 +62,36 @@ const PurchaseModal = ({ client, onClose }) => {
     }
   }
 
+  const createPurchaseWithPayment = async (paymentMethod) => {
+    setLoading(true)
+    setShowPaymentModal(false)
+
+    try {
+      const purchaseData = pendingPurchaseData
+      if (!purchaseData) {
+        setLoading(false)
+        return
+      }
+
+      const result = await addPurchase(client.id, purchaseData.price, purchaseData.items, paymentMethod)
+      if (result.success) {
+        showNotification('Покупка успешно добавлена!', 'success')
+        setTimeout(() => refreshAll(), 100)
+        onClose()
+        setPrice('')
+        setSelectedProducts({})
+        setProductsTotal(0)
+        setPendingPurchaseData(null)
+      } else {
+        showNotification(result.error, 'error')
+      }
+    } catch (error) {
+      showNotification(error.message || 'Ошибка при обработке запроса', 'error')
+    }
+
+    setLoading(false)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     const p = productsTotal > 0 ? productsTotal : Number.parseFloat(price)
@@ -67,8 +100,6 @@ const PurchaseModal = ({ client, onClose }) => {
       return
     }
 
-    setLoading(true)
-    
     // Подготавливаем товары для отправки
     const items = Object.values(selectedProducts).map(item => ({
       productId: item.product.id,
@@ -77,20 +108,8 @@ const PurchaseModal = ({ client, onClose }) => {
       quantity: item.quantity
     }))
     
-    // Отправляем исходную цену и товары, скидка применяется на бэкенде
-    const result = await addPurchase(client.id, p, items)
-    if (result.success) {
-      showNotification('Покупка успешно добавлена!', 'success')
-      // Обновляем данные в других компонентах без перезагрузки страницы
-      setTimeout(() => refreshAll(), 100)
-      onClose()
-      setPrice('')
-      setSelectedProducts({})
-      setProductsTotal(0)
-    } else {
-      showNotification(result.error, 'error')
-    }
-    setLoading(false)
+    setPendingPurchaseData({ price: p, items })
+    setShowPaymentModal(true)
   }
 
   const handleOverlayClick = (e) => {
@@ -186,6 +205,16 @@ const PurchaseModal = ({ client, onClose }) => {
           </div>
         </div>
       </div>
+
+      {showPaymentModal && (
+        <PaymentMethodModal
+          onSelect={createPurchaseWithPayment}
+          onClose={() => {
+            setShowPaymentModal(false)
+            setPendingPurchaseData(null)
+          }}
+        />
+      )}
     </div>
   )
 }

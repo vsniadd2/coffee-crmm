@@ -20,10 +20,11 @@ async function createInitialUsers() {
 
     console.log('🔄 Первый запуск: создание начальных пользователей...');
 
-    // Список пользователей для создания
+    // Список пользователей для создания (point_id: 1 = Червенский, 2 = Валерианова, null = админ, все точки)
     const users = [
-      { username: 'user', password: '4506', role: 'user' },
-      { username: 'admin', password: '7511', role: 'admin' }
+      { username: 'chervenskiy', password: '4506', role: 'user', pointId: 1 },
+      { username: 'valeryanova', password: '4506', role: 'user', pointId: 2 },
+      { username: 'admin', password: '7511', role: 'admin', pointId: 1 }
     ];
 
     let created = 0;
@@ -46,12 +47,12 @@ async function createInitialUsers() {
         // Хешируем пароль
         const hashedPassword = await bcrypt.hash(user.password, 10);
 
-        // Создаем пользователя
+        // Создаем пользователя (point_id для разделения точек продаж)
         await pool.query(
-          `INSERT INTO admins (username, password, role)
-           VALUES ($1, $2, $3)
+          `INSERT INTO admins (username, password, role, point_id)
+           VALUES ($1, $2, $3, $4)
            ON CONFLICT (username) DO NOTHING`,
-          [user.username, hashedPassword, user.role]
+          [user.username, hashedPassword, user.role, user.pointId ?? null]
         );
 
         console.log(`✅ Пользователь ${user.username} создан (роль: ${user.role})`);

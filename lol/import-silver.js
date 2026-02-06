@@ -1,16 +1,15 @@
 /**
- * Импорт клиентов SILVER из Excel (lol/silver 5.xlsx) в БД.
+ * Импорт клиентов SILVER из Excel (silver 5.xlsx) в БД.
  * Ожидаемые колонки: Имя, Фамилия, Отчество (или одна ФИО), Идентификаторы.
  * Все импортируемые клиенты получают status = standart, total_spent = 350.
- * Запуск из корня проекта: node backend/scripts/import-silver-from-excel.js
- * Или из backend: node scripts/import-silver-from-excel.js
+ * Запуск из корня проекта: node lol/import-silver.js
  */
 
 const path = require('path');
 const XLSX = require('xlsx');
-const { pool, initDatabase } = require('../database');
+const { pool, initDatabase } = require('../backend/database');
 
-const EXCEL_PATH = path.join(__dirname, '..', '..', 'lol', 'silver 5.xlsx');
+const EXCEL_PATH = path.join(__dirname, 'silver 5.xlsx');
 
 function normalizeHeader(str) {
   if (str == null || typeof str !== 'string') return '';

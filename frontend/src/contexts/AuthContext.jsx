@@ -74,6 +74,13 @@ export const AuthProvider = ({ children }) => {
       const data = await authService.refreshToken(refreshToken)
       setAccessToken(data.accessToken)
       localStorage.setItem('accessToken', data.accessToken)
+      if (data.user) {
+        setUser(prev => {
+          const merged = { ...prev, ...data.user }
+          localStorage.setItem('userInfo', JSON.stringify(merged))
+          return merged
+        })
+      }
       return true
     } catch (error) {
       logout()

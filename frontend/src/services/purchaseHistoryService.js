@@ -1,20 +1,14 @@
 import { API_URL, getAuthHeaders } from '../config/api'
 
 export const purchaseHistoryService = {
-  async getPurchases({ page = 1, limit = 20, dateFrom = null, dateTo = null, searchName = null } = {}) {
+  async getPurchases({ page = 1, limit = 20, dateFrom = null, dateTo = null, searchName = null, pointId = null } = {}) {
     const params = new URLSearchParams()
     params.append('page', page.toString())
     params.append('limit', limit.toString())
-    
-    if (dateFrom) {
-      params.append('dateFrom', dateFrom)
-    }
-    if (dateTo) {
-      params.append('dateTo', dateTo)
-    }
-    if (searchName) {
-      params.append('searchName', searchName)
-    }
+    if (dateFrom) params.append('dateFrom', dateFrom)
+    if (dateTo) params.append('dateTo', dateTo)
+    if (searchName) params.append('searchName', searchName)
+    if (pointId != null && pointId !== '') params.append('pointId', pointId)
 
     const response = await fetch(`${API_URL}/purchases?${params.toString()}`, {
       headers: getAuthHeaders()
@@ -114,6 +108,28 @@ export const purchaseHistoryService = {
     if (!response.ok) {
       const data = await response.json().catch(() => ({}))
       throw new Error(data.error || 'Ошибка удаления заказа')
+    }
+
+    return response.json()
+  },
+
+  async getPaymentStats(dateFrom = null, dateTo = null, pointId = null) {
+    const params = new URLSearchParams()
+    if (dateFrom) params.append('dateFrom', dateFrom)
+    if (dateTo) params.append('dateTo', dateTo)
+    if (pointId != null && pointId !== '') params.append('pointId', pointId)
+
+    const response = await fetch(`${API_URL}/purchases/payment-stats?${params.toString()}`, {
+      headers: getAuthHeaders()
+    })
+
+    if (response.status === 403) {
+      throw new Error('UNAUTHORIZED')
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || 'Ошибка загрузки статистики')
     }
 
     return response.json()

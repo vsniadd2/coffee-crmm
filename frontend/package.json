@@ -9,12 +9,18 @@
     "preview": "vite preview",
     "start": "vite preview"
   },
-  "keywords": ["crm", "coffee", "frontend", "react"],
+  "keywords": [
+    "crm",
+    "coffee",
+    "frontend",
+    "react"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

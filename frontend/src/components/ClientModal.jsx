@@ -4,6 +4,7 @@ import { clientService } from '../services/clientService'
 import { useNotification } from './NotificationProvider'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import ProductSelector from './ProductSelector'
+import PaymentMethodModal from './PaymentMethodModal'
 import './ClientModal.css'
 
 const ClientModal = ({ onClose }) => {
@@ -19,6 +20,8 @@ const ClientModal = ({ onClose }) => {
   const [checkedClient, setCheckedClient] = useState(null)
   const [selectedProducts, setSelectedProducts] = useState({})
   const [productsTotal, setProductsTotal] = useState(0)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [pendingOrderData, setPendingOrderData] = useState(null)
 
   const { addClient, addPurchase } = useClients()
   const { showNotification } = useNotification()
@@ -54,9 +57,66 @@ const ClientModal = ({ onClose }) => {
     }
   }
 
+  const createOrderWithPayment = async (paymentMethod) => {
+    setLoading(true)
+    setShowPaymentModal(false)
+
+    try {
+      const orderData = pendingOrderData
+      if (!orderData) {
+        setLoading(false)
+        return
+      }
+
+      if (orderData.type === 'existing') {
+        const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod)
+        if (purchaseResult.success) {
+          showNotification('Покупка успешно добавлена!', 'success')
+          setTimeout(() => refreshAll(), 100)
+          setTimeout(() => {
+            onClose()
+            setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+            setSelectedProducts({})
+            setProductsTotal(0)
+            setCheckedClient(null)
+            setDiscountInfo(null)
+          }, 1000)
+        } else {
+          showNotification(purchaseResult.error || 'Ошибка при добавлении покупки', 'error')
+        }
+      } else if (orderData.type === 'new') {
+        const result = await addClient({
+          firstName: orderData.firstName,
+          lastName: orderData.lastName,
+          middleName: orderData.middleName,
+          clientId: orderData.clientId,
+          price: orderData.price,
+          items: orderData.items,
+          paymentMethod
+        })
+
+        if (result.success) {
+          showNotification('Клиент успешно добавлен!', 'success')
+          refreshAll()
+          onClose()
+          setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+          setSelectedProducts({})
+          setProductsTotal(0)
+        } else {
+          showNotification(result.error, 'error')
+        }
+      }
+
+      setPendingOrderData(null)
+    } catch (error) {
+      showNotification(error.message || 'Ошибка при обработке запроса', 'error')
+    }
+
+    setLoading(false)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true)
     setDiscountInfo(null)
     setCheckedClient(null)
 
@@ -87,55 +147,17 @@ const ClientModal = ({ onClose }) => {
             
             // Если клиент найден и указана цена, добавляем покупку
             if (price > 0) {
-              try {
-                // Даем время для отображения информации о клиенте
-                await new Promise(resolve => setTimeout(resolve, 300))
-                
-                // Подготавливаем товары для отправки
-                const items = Object.values(selectedProducts).map(item => ({
-                  productId: item.product.id,
-                  productName: item.product.name,
-                  productPrice: item.product.price,
-                  quantity: item.quantity
-                }))
-                
-                const purchaseResult = await addPurchase(existingClient.id, price, items)
-                if (purchaseResult.success) {
-                  showNotification('Покупка успешно добавлена!', 'success')
-                  // Обновляем данные в других компонентах без перезагрузки страницы
-                  setTimeout(() => refreshAll(), 100)
-                  
-                  // Небольшая задержка перед закрытием, чтобы пользователь увидел уведомление
-                  setTimeout(() => {
-                    onClose()
-                    setFormData({
-                      firstName: '',
-                      lastName: '',
-                      middleName: '',
-                      clientId: '',
-                      price: ''
-                    })
-                    setSelectedProducts({})
-                    setProductsTotal(0)
-                    setCheckedClient(null)
-                    setDiscountInfo(null)
-                  }, 1000)
-                  
-                  setLoading(false)
-                  return
-                } else {
-                  showNotification(purchaseResult.error || 'Ошибка при добавлении покупки', 'error')
-                  setLoading(false)
-                  return
-                }
-              } catch (purchaseError) {
-                showNotification(purchaseError.message || 'Ошибка при добавлении покупки', 'error')
-                setLoading(false)
-                return
-              }
+              const items = Object.values(selectedProducts).map(item => ({
+                productId: item.product.id,
+                productName: item.product.name,
+                productPrice: item.product.price,
+                quantity: item.quantity
+              }))
+              setPendingOrderData({ type: 'existing', clientId: existingClient.id, price, items })
+              setShowPaymentModal(true)
+              return
             } else {
               showNotification('Клиент найден. Укажите цену для добавления покупки.', 'info')
-              setLoading(false)
               return
             }
           }
@@ -143,7 +165,6 @@ const ClientModal = ({ onClose }) => {
           // Клиент не найден - продолжаем создание нового
           if (err.message === 'UNAUTHORIZED') {
             showNotification('Ошибка авторизации', 'error')
-            setLoading(false)
             return
           }
           // 404 или другой ошибка - клиент не найден, создаем нового
@@ -161,7 +182,8 @@ const ClientModal = ({ onClose }) => {
         quantity: item.quantity
       }))
       
-      const result = await addClient({
+      setPendingOrderData({
+        type: 'new',
         firstName: formData.firstName,
         lastName: formData.lastName,
         middleName: formData.middleName,
@@ -169,28 +191,10 @@ const ClientModal = ({ onClose }) => {
         price: finalPrice,
         items
       })
-
-      if (result.success) {
-        showNotification('Клиент успешно добавлен!', 'success')
-        refreshAll() // Обновляем все данные
-        onClose()
-        setFormData({
-          firstName: '',
-          lastName: '',
-          middleName: '',
-          clientId: '',
-          price: ''
-        })
-        setSelectedProducts({})
-        setProductsTotal(0)
-      } else {
-        showNotification(result.error, 'error')
-      }
+      setShowPaymentModal(true)
     } catch (error) {
       showNotification(error.message || 'Ошибка при обработке запроса', 'error')
     }
-
-    setLoading(false)
   }
 
   const handleOverlayClick = (e) => {
@@ -345,6 +349,16 @@ const ClientModal = ({ onClose }) => {
           </div>
         </div>
       </div>
+
+      {showPaymentModal && (
+        <PaymentMethodModal
+          onSelect={createOrderWithPayment}
+          onClose={() => {
+            setShowPaymentModal(false)
+            setPendingOrderData(null)
+          }}
+        />
+      )}
     </div>
   )
 }

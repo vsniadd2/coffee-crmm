@@ -281,6 +281,14 @@ const OrderDetailsModal = ({ order, onClose, onMarkOperation, onStartReplacement
                   <span className="order-details-value">{order.discount}%</span>
                 </div>
               )}
+              {order.employee_discount > 0 && (
+                <div className="order-details-item order-details-item--employee">
+                  <span className="order-details-label">Скидка сотруднику:</span>
+                  <span className="order-details-value order-details-employee-badge">
+                    Применена скидка сотруднику: −{parseFloat(order.employee_discount).toFixed(2)} BYN
+                  </span>
+                </div>
+              )}
               <div className="order-details-item order-details-item--total">
                 <span className="order-details-label">Итого к оплате:</span>
                 <span className="order-details-value mono order-details-total">

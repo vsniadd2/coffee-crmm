@@ -1,4 +1,6 @@
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -14,6 +16,36 @@ const pool = new Pool(dbConfig);
 pool.on('connect', async (client) => {
   await client.query('SET timezone = \'Europe/Moscow\'');
 });
+
+// Запуск миграций из папки migrations/ (без пересоздания контейнера)
+const runMigrations = async (client) => {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      name VARCHAR(255) PRIMARY KEY,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  const migrationsDir = path.join(__dirname, 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
+  const files = fs.readdirSync(migrationsDir)
+    .filter(f => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const name = file;
+    const existing = await client.query('SELECT 1 FROM schema_migrations WHERE name = $1', [name]);
+    if (existing.rows.length > 0) continue;
+    const filePath = path.join(migrationsDir, file);
+    const sql = fs.readFileSync(filePath, 'utf8');
+    try {
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [name]);
+      console.log('✅ Миграция применена:', name);
+    } catch (err) {
+      console.error('❌ Ошибка миграции', name, err.message);
+      throw err;
+    }
+  }
+};
 
 // Инициализация базы данных
 const initDatabase = async () => {
@@ -92,6 +124,56 @@ const initDatabase = async () => {
     } catch (error) {
       if (!error.message.includes('already exists')) {
         console.log('ℹ️ Миграция replacement_of_transaction_id:', error.message);
+      }
+    }
+
+    // Миграция: способ оплаты (cash/card)
+    try {
+      await client.query(`
+        ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS payment_method VARCHAR(20) DEFAULT 'cash'
+      `);
+      console.log('✅ Миграция transactions: payment_method добавлен');
+    } catch (error) {
+      if (!error.message.includes('already exists')) {
+        console.log('ℹ️ Миграция payment_method:', error.message);
+      }
+    }
+
+    // Миграция: теги товаров и скидка сотрудника
+    try {
+      await client.query(`
+        ALTER TABLE products
+        ADD COLUMN IF NOT EXISTS tags VARCHAR(255) DEFAULT ''
+      `);
+      console.log('✅ Миграция products: tags добавлен');
+    } catch (error) {
+      if (!error.message.includes('already exists')) {
+        console.log('ℹ️ Миграция products tags:', error.message);
+      }
+    }
+
+    try {
+      await client.query(`
+        ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS employee_discount DECIMAL(10, 2) DEFAULT 0
+      `);
+      console.log('✅ Миграция transactions: employee_discount добавлен');
+    } catch (error) {
+      if (!error.message.includes('already exists')) {
+        console.log('ℹ️ Миграция transactions employee_discount:', error.message);
+      }
+    }
+
+    try {
+      await client.query(`
+        ALTER TABLE transactions
+        ADD COLUMN IF NOT EXISTS created_by_user VARCHAR(255)
+      `);
+      console.log('✅ Миграция transactions: created_by_user добавлен');
+    } catch (error) {
+      if (!error.message.includes('already exists')) {
+        console.log('ℹ️ Миграция transactions created_by_user:', error.message);
       }
     }
 
@@ -298,6 +380,9 @@ const initDatabase = async () => {
       }
     }
 
+    // Запуск миграций (новые колонки, таблицы points и т.д.) — без пересоздания контейнера
+    await runMigrations(client);
+
     // В БД хранится только то, что добавлено вручную или скриптами. При перезапуске
     // выполняются только CREATE TABLE и ALTER TABLE (миграции), без INSERT/UPDATE/DELETE.
 
@@ -319,23 +404,6 @@ const initDatabase = async () => {
       console.log('ℹ️ Не удалось проверить необходимость создания пользователей:', userCheckError.message);
     }
     
-    // Проверяем, нужно ли запустить импорт начальных данных (только при первом запуске)
-    try {
-      const countResult = await client.query('SELECT COUNT(*) as count FROM clients');
-      const clientCount = parseInt(countResult.rows[0].count);
-      
-      if (clientCount === 0) {
-        console.log('🔄 Первый запуск: запуск импорта начальных данных...');
-        // Запускаем импорт асинхронно, не блокируя запуск сервера
-        const { runInitialImports } = require('./scripts/run-initial-imports');
-        runInitialImports().catch(err => {
-          console.error('❌ Ошибка при импорте начальных данных:', err.message);
-        });
-      }
-    } catch (importCheckError) {
-      // Игнорируем ошибки проверки - не критично
-      console.log('ℹ️ Не удалось проверить необходимость импорта:', importCheckError.message);
-    }
   } catch (error) {
     console.error('❌ Ошибка инициализации базы данных:', error);
   } finally {

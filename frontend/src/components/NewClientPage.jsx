@@ -5,6 +5,7 @@ import { useNotification } from './NotificationProvider'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import { useAuth } from '../contexts/AuthContext'
 import ProductSelector from './ProductSelector'
+import PaymentMethodModal from './PaymentMethodModal'
 import { normalizeMiddleNameForDisplay, normalizeClientIdForDisplay } from '../utils/clientDisplay'
 import './NewClientPage.css'
 
@@ -33,6 +34,9 @@ const NewClientPage = () => {
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState(null)
   const [productSelectorKey, setProductSelectorKey] = useState(0)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [pendingOrderData, setPendingOrderData] = useState(null)
+  const [employeeDiscount, setEmployeeDiscount] = useState(false)
   const debounceRef = useRef(null)
   const discountDebounceRef = useRef(null)
   const searchInputRef = useRef(null)
@@ -190,6 +194,9 @@ const NewClientPage = () => {
     }
   }
 
+  // Скидка сотрудника: -1 BYN к заказу при включённой галочке
+  const employeeDiscountAmount = employeeDiscount ? 1 : 0
+
   const handleProductsChange = useCallback((cart, total) => {
     setSelectedProducts(cart)
     setProductsTotal(total)
@@ -255,9 +262,115 @@ const NewClientPage = () => {
     }
   }, [formData.price, productsTotal, checkedClient, recalculateDiscount])
 
+  const createOrderWithPayment = async (paymentMethod) => {
+    setLoading(true)
+    setShowPaymentModal(false)
+
+    try {
+      const orderData = pendingOrderData
+      if (!orderData) {
+        setLoading(false)
+        return
+      }
+
+      if (orderData.type === 'anonymous') {
+        try {
+          await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+          showNotification('Заказ создан!', 'success')
+          refreshAll()
+          setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+          setSelectedProducts({})
+          setProductsTotal(0)
+          setEmployeeDiscount(false)
+          setSearchQuery('')
+          setSearchResults([])
+          setProductSelectorKey(k => k + 1)
+        } catch (err) {
+          if (err.message === 'UNAUTHORIZED') {
+            const refreshed = await refreshAccessToken()
+            if (refreshed) {
+              try {
+                await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+                showNotification('Заказ создан!', 'success')
+                refreshAll()
+                setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+                setSelectedProducts({})
+                setProductsTotal(0)
+                setEmployeeDiscount(false)
+                setSearchQuery('')
+                setSearchResults([])
+                setProductSelectorKey(k => k + 1)
+              } catch (retryErr) {
+                showNotification(retryErr.message || 'Ошибка создания заказа', 'error')
+              }
+            } else {
+              showNotification('Сессия истекла. Войдите снова.', 'error')
+            }
+          } else {
+            showNotification(err.message || 'Ошибка создания заказа', 'error')
+          }
+        }
+      } else if (orderData.type === 'existing') {
+        try {
+          const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+          if (purchaseResult.success) {
+            showNotification('Покупка успешно добавлена!', 'success')
+            setTimeout(() => refreshAll(), 100)
+            setTimeout(() => {
+              setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+              setSelectedProducts({})
+              setProductsTotal(0)
+              setEmployeeDiscount(false)
+              setCheckedClient(null)
+              setDiscountInfo(null)
+              setSearchQuery('')
+              setSearchResults([])
+              setProductSelectorKey(k => k + 1)
+            }, 1000)
+          } else {
+            showNotification(purchaseResult.error || 'Ошибка при добавлении покупки', 'error')
+          }
+        } catch (purchaseError) {
+          showNotification(purchaseError.message || 'Ошибка при добавлении покупки', 'error')
+        }
+      } else if (orderData.type === 'new') {
+        const result = await addClient({
+          firstName: orderData.firstName,
+          lastName: orderData.lastName,
+          middleName: orderData.middleName,
+          clientId: orderData.clientId,
+          price: orderData.price,
+          items: orderData.items,
+          paymentMethod,
+          employeeDiscount: orderData.employeeDiscount || 0
+        })
+
+        if (result.success) {
+          showNotification('Клиент успешно добавлен!', 'success')
+          refreshAll()
+          setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
+          setSelectedProducts({})
+          setProductsTotal(0)
+          setCheckedClient(null)
+          setDiscountInfo(null)
+          setSearchQuery('')
+          setSearchResults([])
+          setProductSelectorKey(k => k + 1)
+        } else {
+          showNotification(result.error, 'error')
+        }
+      }
+
+      setPendingOrderData(null)
+    } catch (error) {
+      showNotification(error.message || 'Ошибка при обработке запроса', 'error')
+    }
+
+    setLoading(false)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true)
     setDiscountInfo(null)
     setCheckedClient(null)
 
@@ -273,17 +386,14 @@ const NewClientPage = () => {
       if (!isAnonymous) {
         if (!firstName) {
           showNotification('Укажите имя', 'error')
-          setLoading(false)
           return
         }
         if (!lastName) {
           showNotification('Укажите фамилию', 'error')
-          setLoading(false)
           return
         }
         if (!clientId) {
           showNotification('Укажите ID (телефон или строку)', 'error')
-          setLoading(false)
           return
         }
       }
@@ -293,7 +403,6 @@ const NewClientPage = () => {
         const price = productsTotal > 0 ? productsTotal : (parseFloat(formData.price) || 0)
         if (price <= 0) {
           showNotification('Укажите цену или выберите товары из каталога', 'error')
-          setLoading(false)
           return
         }
         const items = Object.values(selectedProducts).map(item => ({
@@ -302,41 +411,8 @@ const NewClientPage = () => {
           productPrice: item.product.price,
           quantity: item.quantity
         }))
-        try {
-          await clientService.createAnonymousPurchase(price, items)
-          showNotification('Заказ создан!', 'success')
-          refreshAll()
-          setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
-          setSelectedProducts({})
-          setProductsTotal(0)
-          setSearchQuery('')
-          setSearchResults([])
-          setProductSelectorKey(k => k + 1)
-        } catch (err) {
-          if (err.message === 'UNAUTHORIZED') {
-            const refreshed = await refreshAccessToken()
-            if (refreshed) {
-              try {
-                await clientService.createAnonymousPurchase(price, items)
-                showNotification('Заказ создан!', 'success')
-                refreshAll()
-                setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
-                setSelectedProducts({})
-                setProductsTotal(0)
-                setSearchQuery('')
-                setSearchResults([])
-                setProductSelectorKey(k => k + 1)
-              } catch (retryErr) {
-                showNotification(retryErr.message || 'Ошибка создания заказа', 'error')
-              }
-            } else {
-              showNotification('Сессия истекла. Войдите снова.', 'error')
-            }
-          } else {
-            showNotification(err.message || 'Ошибка создания заказа', 'error')
-          }
-        }
-        setLoading(false)
+        setPendingOrderData({ type: 'anonymous', price, items, employeeDiscount: employeeDiscountAmount })
+        setShowPaymentModal(true)
         return
       }
 
@@ -366,57 +442,23 @@ const NewClientPage = () => {
             
             // Если клиент найден и указана цена, добавляем покупку
             if (price > 0) {
-              try {
-                // Даем время для отображения информации о клиенте
-                await new Promise(resolve => setTimeout(resolve, 300))
-                
-                // Подготавливаем товары для отправки
-                const items = Object.values(selectedProducts).map(item => ({
-                  productId: item.product.id,
-                  productName: item.product.name,
-                  productPrice: item.product.price,
-                  quantity: item.quantity
-                }))
-                
-                const purchaseResult = await addPurchase(existingClient.id, price, items)
-                if (purchaseResult.success) {
-                  showNotification('Покупка успешно добавлена!', 'success')
-                  // Обновляем данные в других компонентах без перезагрузки страницы
-                  setTimeout(() => refreshAll(), 100)
-                  
-                  // Очищаем форму, товары и корзину после успешного добавления
-                  setTimeout(() => {
-                    setFormData({
-                      firstName: '',
-                      lastName: '',
-                      middleName: '',
-                      clientId: '',
-                      price: ''
-                    })
-                    setSelectedProducts({})
-                    setProductsTotal(0)
-                    setCheckedClient(null)
-                    setDiscountInfo(null)
-                    setSearchQuery('')
-                    setSearchResults([])
-                    setProductSelectorKey(k => k + 1)
-                  }, 1000)
-                  
-                  setLoading(false)
-                  return
-                } else {
-                  showNotification(purchaseResult.error || 'Ошибка при добавлении покупки', 'error')
-                  setLoading(false)
-                  return
-                }
-              } catch (purchaseError) {
-                showNotification(purchaseError.message || 'Ошибка при добавлении покупки', 'error')
-                setLoading(false)
-                return
-              }
+              const items = Object.values(selectedProducts).map(item => ({
+                productId: item.product.id,
+                productName: item.product.name,
+                productPrice: item.product.price,
+                quantity: item.quantity
+              }))
+              setPendingOrderData({ 
+                type: 'existing', 
+                clientId: existingClient.id, 
+                price, 
+                items,
+                employeeDiscount: employeeDiscountAmount
+              })
+              setShowPaymentModal(true)
+              return
             } else {
               showNotification('Клиент найден. Укажите цену для добавления покупки.', 'info')
-              setLoading(false)
               return
             }
           }
@@ -424,7 +466,6 @@ const NewClientPage = () => {
           // Клиент не найден - продолжаем создание нового
           if (err.message === 'UNAUTHORIZED') {
             showNotification('Ошибка авторизации', 'error')
-            setLoading(false)
             return
           }
           // 404 или другой ошибка - клиент не найден, создаем нового
@@ -442,42 +483,20 @@ const NewClientPage = () => {
         quantity: item.quantity
       }))
       
-      const result = await addClient({
+      setPendingOrderData({
+        type: 'new',
         firstName: formData.firstName,
         lastName: formData.lastName,
         middleName: formData.middleName,
         clientId: formData.clientId,
         price: finalPrice,
-        items
+        items,
+        employeeDiscount: employeeDiscountAmount
       })
-
-      if (result.success) {
-        showNotification('Клиент успешно добавлен!', 'success')
-        refreshAll() // Обновляем все данные
-        
-        // Очищаем форму, товары и корзину после успешного добавления
-        setFormData({
-          firstName: '',
-          lastName: '',
-          middleName: '',
-          clientId: '',
-          price: ''
-        })
-        setSelectedProducts({})
-        setProductsTotal(0)
-        setCheckedClient(null)
-        setDiscountInfo(null)
-        setSearchQuery('')
-        setSearchResults([])
-        setProductSelectorKey(k => k + 1)
-      } else {
-        showNotification(result.error, 'error')
-      }
+      setShowPaymentModal(true)
     } catch (error) {
       showNotification(error.message || 'Ошибка при обработке запроса', 'error')
     }
-
-    setLoading(false)
   }
 
   return (
@@ -684,19 +703,36 @@ const NewClientPage = () => {
                           {discountInfo.originalPrice.toFixed(2)} BYN
                         </div>
                         <div className="price-final">
-                          {discountInfo.finalPrice.toFixed(2)} BYN
+                          {(discountInfo.finalPrice - employeeDiscountAmount).toFixed(2)} BYN
+                          {employeeDiscountAmount > 0 && (
+                            <span className="employee-discount-badge"> (−1 BYN)</span>
+                          )}
                         </div>
                       </div>
                     </>
                   ) : (
-                    <div className="price-preview">
-                      <div className="price-final">
-                        {(productsTotal > 0 ? productsTotal : parseFloat(formData.price) || 0).toFixed(2)} BYN
+                      <div className="price-preview">
+                        <div className="price-final">
+                          {((productsTotal > 0 ? productsTotal : parseFloat(formData.price) || 0) - employeeDiscountAmount).toFixed(2)} BYN
+                          {employeeDiscountAmount > 0 && (
+                            <span className="employee-discount-badge"> (−1 BYN)</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
                   )}
                 </div>
               )}
+
+              <label className="employee-checkbox-wrap">
+                <input
+                  type="checkbox"
+                  checked={employeeDiscount}
+                  onChange={(e) => setEmployeeDiscount(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>Сотрудник</span>
+                {employeeDiscount && <span className="employee-checkbox-hint">(−1 BYN к заказу)</span>}
+              </label>
 
               <div className="new-client-actions">
                 <button
@@ -712,6 +748,16 @@ const NewClientPage = () => {
           </div>
         </div>
       </div>
+
+      {showPaymentModal && (
+        <PaymentMethodModal
+          onSelect={createOrderWithPayment}
+          onClose={() => {
+            setShowPaymentModal(false)
+            setPendingOrderData(null)
+          }}
+        />
+      )}
     </div>
   )
 }

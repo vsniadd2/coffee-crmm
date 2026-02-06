@@ -6,7 +6,6 @@ import { clientService } from '../services/clientService'
 import Stats from './Stats'
 import { formatMinskDateTime } from '../utils/dateTime'
 import { normalizeMiddleNameForDisplay, normalizeClientIdForDisplay } from '../utils/clientDisplay'
-import CategoriesManageModal from './CategoriesManageModal'
 import EditClientModal from './EditClientModal'
 import LoadingIndicator from './LoadingIndicator'
 import './ClientList.css'
@@ -30,7 +29,6 @@ const ClientList = ({ onSelectClient }) => {
       return ''
     }
   })
-  const [categoriesModalOpen, setCategoriesModalOpen] = useState(false)
   const [editClient, setEditClient] = useState(null)
   const debounceTimerRef = useRef(null)
   const searchInputRef = useRef(null)
@@ -292,16 +290,6 @@ const ClientList = ({ onSelectClient }) => {
         <div className="clients-header-top">
           <h2>Список клиентов</h2>
           <div className="clients-header-buttons">
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setCategoriesModalOpen(true)}
-                className="categories-manage-btn"
-                title="Категории и товары"
-              >
-                Категории и товары
-              </button>
-            )}
             {isAdmin && clients.length > 0 && (
               <button 
                 onClick={exportToCSV} 
@@ -461,9 +449,6 @@ const ClientList = ({ onSelectClient }) => {
             Вперед
           </button>
         </div>
-      )}
-      {categoriesModalOpen && (
-        <CategoriesManageModal onClose={() => setCategoriesModalOpen(false)} />
       )}
       {editClient && (
         <EditClientModal client={editClient} onClose={() => setEditClient(null)} />

@@ -14,9 +14,29 @@ const {
 // БД хранит время в московском (сессия SET timezone = 'Europe/Moscow', CURRENT_TIMESTAMP даёт МСК)
 // Просто форматируем сохранённое значение и добавляем +03:00
 const CREATED_AT_MSK_SQL = "to_char(t.created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
-const TRANSACTION_SELECT_MSK = `t.id, t.client_id, t.amount, t.discount, t.final_amount, ${CREATED_AT_MSK_SQL}, t.operation_type, t.replacement_of_transaction_id`;
+const TRANSACTION_SELECT_MSK = `t.id, t.client_id, t.amount, t.discount, t.final_amount, ${CREATED_AT_MSK_SQL}, t.operation_type, t.replacement_of_transaction_id, t.payment_method`;
 // Для таблицы clients (без алиаса)
 const CREATED_AT_MSK_CLIENT_SQL = "to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
+
+// Точки продаж: для user — только своя точка, для admin — опционально query.pointId или все
+function getPointFilter(req) {
+  if (req.user?.role === 'admin') {
+    const q = req.query.pointId;
+    if (q !== undefined && q !== '' && q !== null) {
+      const id = parseInt(q, 10);
+      if (!Number.isNaN(id)) return { pointId: id, isAdmin: true };
+    }
+    return { pointId: null, isAdmin: true };
+  }
+  return { pointId: req.user?.pointId ?? null, isAdmin: false };
+}
+
+// point_id при создании транзакции: user — своя точка, admin — из body или null
+function getPointIdForInsert(req) {
+  return req.user?.role === 'admin'
+    ? (req.body.pointId != null ? parseInt(req.body.pointId, 10) : null)
+    : (req.user?.pointId ?? null);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,9 +57,12 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Поиск админа в базе
+    // Поиск админа в базе с названием точки (если есть)
     const result = await pool.query(
-      'SELECT * FROM admins WHERE username = $1',
+      `SELECT a.id, a.username, a.password, a.role, a.point_id, p.name as point_name
+       FROM admins a
+       LEFT JOIN points p ON a.point_id = p.id
+       WHERE a.username = $1`,
       [username]
     );
 
@@ -55,9 +78,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
 
-    // Генерация токенов (роль в токене для проверки прав)
     const role = admin.role || 'user';
-    const accessToken = generateAccessToken(admin.id, admin.username, role);
+    const pointId = admin.point_id != null ? admin.point_id : null;
+    const pointName = admin.point_name || null;
+    const accessToken = generateAccessToken(admin.id, admin.username, role, pointId);
     const refreshToken = generateRefreshToken(admin.id, admin.username);
 
     res.json({
@@ -66,11 +90,24 @@ app.post('/api/auth/login', async (req, res) => {
       user: {
         id: admin.id,
         username: admin.username,
-        role: admin.role || 'user'
+        role: admin.role || 'user',
+        pointId: pointId,
+        pointName: pointName
       }
     });
   } catch (error) {
     console.error('Ошибка входа:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Список точек продаж (для админа — выбор точки в фильтрах)
+app.get('/api/points', verifyAccessToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM points ORDER BY id');
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения точек:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -86,10 +123,18 @@ app.post('/api/auth/refresh', async (req, res) => {
     if (!decoded) {
       return res.status(403).json({ error: 'Refresh token недействителен' });
     }
-    const adminRow = await pool.query('SELECT role FROM admins WHERE id = $1', [decoded.userId]);
-    const role = adminRow.rows[0]?.role || 'user';
-    const accessToken = generateAccessToken(decoded.userId, decoded.username, role);
-    res.json({ accessToken });
+    const adminRow = await pool.query(
+      'SELECT a.role, a.point_id, p.name as point_name FROM admins a LEFT JOIN points p ON a.point_id = p.id WHERE a.id = $1',
+      [decoded.userId]
+    );
+    const row = adminRow.rows[0];
+    const role = row?.role || 'user';
+    const pointId = row?.point_id != null ? row.point_id : null;
+    const accessToken = generateAccessToken(decoded.userId, decoded.username, role, pointId);
+    res.json({
+      accessToken,
+      user: row ? { pointId: pointId, pointName: row.point_name || null, role } : undefined
+    });
   } catch (e) {
     res.status(500).json({ error: 'Ошибка сервера' });
   }
@@ -298,7 +343,10 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
     const status = client.status || 'standart';
     const hasDiscount = status === 'gold';
     const discount = hasDiscount ? 10 : 0;
-    const finalAmount = discount > 0 ? Number.parseFloat(price) * 0.9 : Number.parseFloat(price);
+    const employeeDiscount = parseFloat(req.body.employeeDiscount || 0);
+    // Сначала применяем скидку GOLD, затем скидку сотрудника
+    let finalAmount = discount > 0 ? Number.parseFloat(price) * 0.9 : Number.parseFloat(price);
+    finalAmount = Math.max(0, finalAmount - employeeDiscount);
 
     const newTotal = Number.parseFloat(client.total_spent) + Number.parseFloat(price);
     // Статус GOLD: общая сумма всех заказов >= 500
@@ -311,11 +359,14 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
     client.status = newStatus;
 
     // Создание транзакции
+    const paymentMethod = req.body.paymentMethod || 'cash';
+    const createdByUser = req.user?.username || null;
+    const pointId = getPointIdForInsert(req);
     const transactionResult = await pool.query(`
-      INSERT INTO transactions (client_id, amount, discount, final_amount)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
-    `, [client.id, price, discount, finalAmount]);
+    `, [client.id, Number.parseFloat(price), discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]);
     
     const transactionId = transactionResult.rows[0].id;
     
@@ -382,7 +433,10 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
     const newStatus = newTotal >= 500 ? 'gold' : (clientData.status || 'standart');
     const hasDiscount = newStatus === 'gold';
     const discount = hasDiscount ? 10 : 0;
-    const finalAmount = discount > 0 ? priceFloat * 0.9 : priceFloat;
+    const employeeDiscount = parseFloat(req.body.employeeDiscount || 0);
+    // Сначала применяем скидку GOLD, затем скидку сотрудника
+    let finalAmount = discount > 0 ? priceFloat * 0.9 : priceFloat;
+    finalAmount = Math.max(0, finalAmount - employeeDiscount);
 
     // Обновление клиента: total_spent и статус (gold при сумме >= 500)
     await dbClient.query(
@@ -391,9 +445,12 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
     );
 
     // Создание транзакции
+    const paymentMethod = req.body.paymentMethod || 'cash';
+    const createdByUser = req.user?.username || null;
+    const pointId = getPointIdForInsert(req);
     const transactionResult = await dbClient.query(
-      'INSERT INTO transactions (client_id, amount, discount, final_amount) VALUES ($1, $2, $3, $4) RETURNING id',
-      [clientId, price, discount, finalAmount]
+      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+      [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
     );
 
     const transactionId = transactionResult.rows[0].id;
@@ -451,11 +508,15 @@ app.post('/api/purchases/anonymous', verifyAccessToken, async (req, res) => {
 
     // Без скидки для анонимных заказов
     const discount = 0;
-    const finalAmount = priceFloat;
+    const employeeDiscount = parseFloat(req.body.employeeDiscount || 0);
+    const finalAmount = Math.max(0, priceFloat - employeeDiscount);
 
+    const paymentMethod = req.body.paymentMethod || 'cash';
+    const createdByUser = req.user?.username || null;
+    const pointId = getPointIdForInsert(req);
     const transactionResult = await pool.query(
-      'INSERT INTO transactions (client_id, amount, discount, final_amount) VALUES (NULL, $1, $2, $3) RETURNING id',
-      [priceFloat, discount, finalAmount]
+      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
     );
 
     const transactionId = transactionResult.rows[0].id;
@@ -567,6 +628,487 @@ app.get('/api/clients/:clientId', verifyAccessToken, async (req, res) => {
   }
 });
 
+// Маршрут для получения статистики по способам оплаты
+app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const { pointId } = getPointFilter(req);
+
+    let query = `
+      SELECT 
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_total,
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_total,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_count,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_count
+      FROM transactions
+    `;
+
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (pointId != null) {
+      conditions.push(`point_id = $${paramIndex}`);
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      conditions.push(`DATE(created_at) >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      conditions.push(`DATE(created_at) <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    const result = await pool.query(query, params);
+    const stats = result.rows[0];
+
+    res.json({
+      cash: {
+        total: parseFloat(stats.cash_total || 0),
+        count: parseInt(stats.cash_count || 0)
+      },
+      card: {
+        total: parseFloat(stats.card_total || 0),
+        count: parseInt(stats.card_count || 0)
+      },
+      total: {
+        total: parseFloat(stats.cash_total || 0) + parseFloat(stats.card_total || 0),
+        count: parseInt(stats.cash_count || 0) + parseInt(stats.card_count || 0)
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики по способам оплаты:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Маршрут для получения статистики продаж по товарам (только напитки, исключая пачки кофе и турки)
+app.get('/api/orders/stats/products', verifyAccessToken, async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const { pointId } = getPointFilter(req);
+
+    let query = `
+      SELECT 
+        ti.product_name,
+        SUM(ti.quantity) as total_quantity,
+        SUM(ti.product_price * ti.quantity) as total_revenue,
+        COUNT(DISTINCT ti.transaction_id) as order_count
+      FROM transaction_items ti
+      INNER JOIN transactions t ON ti.transaction_id = t.id
+      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+        AND (
+          ti.product_name NOT ILIKE '%пачка%'
+          AND ti.product_name NOT ILIKE '%турка%'
+          AND ti.product_name NOT ILIKE '%упаковка%'
+          AND ti.product_name NOT ILIKE '%кг%'
+          AND ti.product_name NOT ILIKE '%гр%'
+          AND ti.product_name NOT ILIKE '%1000%'
+          AND ti.product_name NOT ILIKE '%500%'
+          AND ti.product_name NOT ILIKE '%250%'
+          AND ti.product_name NOT ILIKE '%кофе фасованный%'
+          AND ti.product_name NOT ILIKE '%кофе в зернах%'
+        )
+    `;
+
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (pointId != null) {
+      conditions.push(`t.point_id = $${paramIndex}`);
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      conditions.push(`DATE(t.created_at) >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      conditions.push(`DATE(t.created_at) <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      query += ` AND ${conditions.join(' AND ')}`;
+    }
+
+    query += `
+      GROUP BY ti.product_name
+      ORDER BY total_quantity DESC
+    `;
+
+    const result = await pool.query(query, params);
+    
+    res.json({
+      products: result.rows.map(row => ({
+        name: row.product_name,
+        quantity: parseInt(row.total_quantity || 0),
+        revenue: parseFloat(row.total_revenue || 0),
+        orderCount: parseInt(row.order_count || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики по товарам:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Маршрут для получения статистики продаж по категориям товаров
+app.get('/api/orders/stats/categories', verifyAccessToken, async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const categoryId = req.query.categoryId || null;
+    const { pointId } = getPointFilter(req);
+
+    let query = `
+      SELECT 
+        pc.id as category_id,
+        pc.name as category_name,
+        SUM(ti.quantity) as total_quantity,
+        SUM(ti.product_price * ti.quantity) as total_revenue,
+        COUNT(DISTINCT ti.transaction_id) as order_count
+      FROM transaction_items ti
+      INNER JOIN transactions t ON ti.transaction_id = t.id
+      LEFT JOIN products p ON (
+        CASE 
+          WHEN ti.product_id ~ '^[0-9]+$' THEN CAST(ti.product_id AS INTEGER) = p.id
+          ELSE false
+        END
+      )
+      LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
+      LEFT JOIN product_categories pc ON ps.category_id = pc.id
+      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+        AND pc.id IS NOT NULL
+    `;
+
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (pointId != null) {
+      conditions.push(`t.point_id = $${paramIndex}`);
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (categoryId) {
+      conditions.push(`pc.id = $${paramIndex}`);
+      params.push(categoryId);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      conditions.push(`DATE(t.created_at) >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      conditions.push(`DATE(t.created_at) <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      query += ` AND ${conditions.join(' AND ')}`;
+    }
+
+    query += `
+      GROUP BY pc.id, pc.name
+      ORDER BY total_quantity DESC
+    `;
+
+    const result = await pool.query(query, params);
+    
+    res.json({
+      categories: result.rows.map(row => ({
+        id: row.category_id,
+        name: row.category_name,
+        quantity: parseInt(row.total_quantity || 0),
+        revenue: parseFloat(row.total_revenue || 0),
+        orderCount: parseInt(row.order_count || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики по категориям:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Маршрут для получения статистики продаж по конкретному товару
+app.get('/api/orders/stats/product', verifyAccessToken, async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const productId = req.query.productId || null;
+    const productName = req.query.productName || null;
+    const { pointId } = getPointFilter(req);
+
+    if (!productId && !productName) {
+      return res.status(400).json({ error: 'Необходимо указать productId или productName' });
+    }
+
+    let query = `
+      SELECT 
+        ti.product_name,
+        ti.product_id,
+        SUM(ti.quantity) as total_quantity,
+        SUM(ti.product_price * ti.quantity) as total_revenue,
+        COUNT(DISTINCT ti.transaction_id) as order_count,
+        DATE(t.created_at) as sale_date
+      FROM transaction_items ti
+      INNER JOIN transactions t ON ti.transaction_id = t.id
+      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+    `;
+
+    const conditions = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (pointId != null) {
+      conditions.push(`t.point_id = $${paramIndex}`);
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (productId) {
+      conditions.push(`ti.product_id = $${paramIndex}`);
+      params.push(productId);
+      paramIndex++;
+    } else if (productName) {
+      conditions.push(`ti.product_name = $${paramIndex}`);
+      params.push(productName);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      conditions.push(`DATE(t.created_at) >= $${paramIndex}`);
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      conditions.push(`DATE(t.created_at) <= $${paramIndex}`);
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      query += ` AND ${conditions.join(' AND ')}`;
+    }
+
+    query += `
+      GROUP BY ti.product_name, ti.product_id, DATE(t.created_at)
+      ORDER BY sale_date ASC
+    `;
+
+    const result = await pool.query(query, params);
+    
+    res.json({
+      product: {
+        name: result.rows[0]?.product_name || productName || '',
+        id: result.rows[0]?.product_id || productId || '',
+        totalQuantity: result.rows.reduce((sum, row) => sum + parseInt(row.total_quantity || 0), 0),
+        totalRevenue: result.rows.reduce((sum, row) => sum + parseFloat(row.total_revenue || 0), 0),
+        totalOrderCount: result.rows.reduce((sum, row) => sum + parseInt(row.order_count || 0), 0),
+        dailyStats: result.rows.map(row => ({
+          date: row.sale_date,
+          quantity: parseInt(row.total_quantity || 0),
+          revenue: parseFloat(row.total_revenue || 0),
+          orderCount: parseInt(row.order_count || 0)
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики по товару:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Константа цветов для графиков
+const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+// Маршрут для получения топ товаров за конкретный день
+app.get('/api/orders/stats/day-top-products', verifyAccessToken, async (req, res) => {
+  try {
+    const date = req.query.date || null;
+    const limit = parseInt(req.query.limit) || 5;
+    const categoryId = req.query.categoryId || null;
+    const { pointId } = getPointFilter(req);
+
+    if (!date) {
+      return res.status(400).json({ error: 'Необходимо указать дату' });
+    }
+
+    let query = `
+      SELECT 
+        ti.product_name,
+        ti.product_id,
+        SUM(ti.quantity) as total_quantity,
+        SUM(ti.product_price * ti.quantity) as total_revenue,
+        COUNT(DISTINCT ti.transaction_id) as order_count
+      FROM transaction_items ti
+      INNER JOIN transactions t ON ti.transaction_id = t.id
+      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+        AND DATE(t.created_at) = $1
+    `;
+
+    const params = [date];
+    let paramIndex = 2;
+
+    if (pointId != null) {
+      query += ` AND t.point_id = $${paramIndex}`;
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (categoryId) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM products p
+        LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
+        LEFT JOIN product_categories pc ON ps.category_id = pc.id
+        WHERE (
+          CASE 
+            WHEN ti.product_id ~ '^[0-9]+$' THEN CAST(ti.product_id AS INTEGER) = p.id
+            ELSE false
+          END
+        ) AND pc.id = $${paramIndex}
+      )`;
+      params.push(categoryId);
+      paramIndex++;
+    }
+
+    query += `
+      GROUP BY ti.product_name, ti.product_id
+      ORDER BY total_revenue DESC
+      LIMIT $${paramIndex}
+    `;
+    params.push(limit);
+
+    const result = await pool.query(query, params);
+    
+    // Вычисляем общую сумму для расчета процентов
+    const totalRevenue = result.rows.reduce((sum, row) => sum + parseFloat(row.total_revenue || 0), 0);
+    
+    const products = result.rows.map((row, index) => {
+      const revenue = parseFloat(row.total_revenue || 0);
+      const percentage = totalRevenue > 0 ? (revenue / totalRevenue * 100) : 0;
+      return {
+        name: row.product_name,
+        id: row.product_id,
+        quantity: parseInt(row.total_quantity || 0),
+        revenue: revenue,
+        percentage: parseFloat(percentage.toFixed(1)),
+        orderCount: parseInt(row.order_count || 0),
+        color: COLORS[index % COLORS.length]
+      };
+    });
+    
+    res.json({
+      date: date,
+      totalRevenue: totalRevenue,
+      products: products
+    });
+  } catch (error) {
+    console.error('Ошибка получения топ товаров за день:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Маршрут для получения статистики продаж по товарам конкретной категории
+app.get('/api/orders/stats/category-products', verifyAccessToken, async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+    const categoryId = req.query.categoryId || null;
+    const { pointId } = getPointFilter(req);
+
+    if (!categoryId) {
+      return res.status(400).json({ error: 'Необходимо указать categoryId' });
+    }
+
+    let query = `
+      SELECT 
+        ti.product_name,
+        ti.product_id,
+        SUM(ti.quantity) as total_quantity,
+        SUM(ti.product_price * ti.quantity) as total_revenue,
+        COUNT(DISTINCT ti.transaction_id) as order_count
+      FROM transaction_items ti
+      INNER JOIN transactions t ON ti.transaction_id = t.id
+      LEFT JOIN products p ON (
+        CASE 
+          WHEN ti.product_id ~ '^[0-9]+$' THEN CAST(ti.product_id AS INTEGER) = p.id
+          ELSE false
+        END
+      )
+      LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
+      LEFT JOIN product_categories pc ON ps.category_id = pc.id
+      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+        AND pc.id = $1
+    `;
+
+    const params = [categoryId];
+    let paramIndex = 2;
+
+    if (pointId != null) {
+      query += ` AND t.point_id = $${paramIndex}`;
+      params.push(pointId);
+      paramIndex++;
+    }
+
+    if (dateFrom) {
+      query += ` AND DATE(t.created_at) >= $${paramIndex}`;
+      params.push(dateFrom);
+      paramIndex++;
+    }
+
+    if (dateTo) {
+      query += ` AND DATE(t.created_at) <= $${paramIndex}`;
+      params.push(dateTo);
+      paramIndex++;
+    }
+
+    query += `
+      GROUP BY ti.product_name, ti.product_id
+      ORDER BY total_quantity DESC
+    `;
+
+    const result = await pool.query(query, params);
+    
+    res.json({
+      products: result.rows.map(row => ({
+        name: row.product_name,
+        id: row.product_id,
+        quantity: parseInt(row.total_quantity || 0),
+        revenue: parseFloat(row.total_revenue || 0),
+        orderCount: parseInt(row.order_count || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики по товарам категории:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // Маршрут для получения истории покупок с фильтрацией по дате и пагинацией
 app.get('/api/purchases', verifyAccessToken, async (req, res) => {
   try {
@@ -576,6 +1118,7 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
     const dateFrom = req.query.dateFrom || null;
     const dateTo = req.query.dateTo || null;
     const searchName = typeof req.query.searchName === 'string' ? req.query.searchName.trim() : '';
+    const { pointId } = getPointFilter(req);
 
     let query = `
       SELECT 
@@ -586,6 +1129,7 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
         t.final_amount,
         ${CREATED_AT_MSK_SQL},
         t.operation_type,
+        t.payment_method,
         c.first_name,
         c.last_name,
         c.middle_name,
@@ -598,6 +1142,12 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
     const conditions = [];
     const params = [];
     let paramIndex = 1;
+
+    if (pointId != null) {
+      conditions.push(`t.point_id = $${paramIndex}`);
+      params.push(pointId);
+      paramIndex++;
+    }
 
     if (dateFrom) {
       conditions.push(`DATE(t.created_at) >= $${paramIndex}`);
@@ -671,7 +1221,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+      `SELECT ${TRANSACTION_SELECT_MSK}, t.employee_discount, t.point_id, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
        FROM transactions t
        LEFT JOIN clients c ON t.client_id = c.id
        WHERE t.id = $1`,
@@ -680,6 +1230,11 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Покупка не найдена' });
+    }
+
+    const purchaseRow = result.rows[0];
+    if (req.user?.role !== 'admin' && purchaseRow.point_id != null && purchaseRow.point_id !== req.user?.pointId) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
     }
     
     // Получаем товары для этой транзакции
@@ -691,14 +1246,14 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
       [id]
     );
     
-    const purchase = result.rows[0];
+    const purchase = purchaseRow;
     purchase.items = itemsResult.rows;
 
     // Связанный заказ: для возврата — замена; для замены — возвращённый заказ
     const opType = (purchase.operation_type || 'sale').toLowerCase();
     if (opType === 'return' && purchase.id) {
       const repl = await pool.query(
-        `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+        `SELECT ${TRANSACTION_SELECT_MSK}, t.employee_discount, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
          FROM transactions t
          LEFT JOIN clients c ON t.client_id = c.id
          WHERE t.replacement_of_transaction_id = $1`,
@@ -713,7 +1268,7 @@ app.get('/api/purchases/:id', verifyAccessToken, async (req, res) => {
       }
     } else if (opType === 'replacement' && purchase.replacement_of_transaction_id) {
       const ret = await pool.query(
-        `SELECT ${TRANSACTION_SELECT_MSK}, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
+        `SELECT ${TRANSACTION_SELECT_MSK}, t.employee_discount, c.first_name, c.last_name, c.middle_name, c.client_id as client_external_id, c.status as client_status
          FROM transactions t
          LEFT JOIN clients c ON t.client_id = c.id
          WHERE t.id = $1`,
@@ -762,6 +1317,10 @@ app.post('/api/purchases/replacement', verifyAccessToken, async (req, res) => {
       return res.status(404).json({ error: 'Заказ не найден' });
     }
     const original = origResult.rows[0];
+    if (req.user?.role !== 'admin' && original.point_id != null && original.point_id !== req.user?.pointId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Доступ запрещён' });
+    }
     const clientId = original.client_id;
 
     const hasDiscount = clientId != null
@@ -848,9 +1407,13 @@ app.patch('/api/purchases/:id', verifyAccessToken, async (req, res) => {
       return res.status(400).json({ error: 'Недопустимый тип операции. Допустимо: return, replacement, sale' });
     }
     
-    const checkResult = await pool.query('SELECT id FROM transactions WHERE id = $1', [id]);
+    const checkResult = await pool.query('SELECT id, point_id FROM transactions WHERE id = $1', [id]);
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'Покупка не найдена' });
+    }
+    const row = checkResult.rows[0];
+    if (req.user?.role !== 'admin' && row.point_id != null && row.point_id !== req.user?.pointId) {
+      return res.status(403).json({ error: 'Доступ запрещён' });
     }
     
     await pool.query(
@@ -1019,7 +1582,7 @@ app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
 
       for (const sub of subcategories) {
         const productsResult = await pool.query(
-          'SELECT id, name, price, image_data, display_order FROM products WHERE subcategory_id = $1 ORDER BY display_order, id',
+          'SELECT id, name, price, image_data, display_order, tags FROM products WHERE subcategory_id = $1 ORDER BY display_order, id',
           [sub.id]
         );
         subcategoriesTree.push({
@@ -1030,7 +1593,8 @@ app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
             id: p.id,
             name: p.name,
             price: parseFloat(p.price),
-            image_data: p.image_data || null
+            image_data: p.image_data || null,
+            tags: p.tags ? p.tags.split(',').filter(t => t.trim()) : []
           }))
         });
       }
@@ -1051,6 +1615,74 @@ app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
   }
 });
 
+// ========== Поиск заказов по товару ==========
+app.get('/api/orders/search', verifyAccessToken, async (req, res) => {
+  try {
+    const { productName, startDate, endDate, createdByUser } = req.query;
+    const { pointId } = getPointFilter(req);
+    
+    if (!productName || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Необходимо указать productName, startDate и endDate' });
+    }
+
+    const params = [`%${productName}%`, startDate, endDate];
+    let paramIndex = 4;
+    const pointCondition = pointId != null ? ` AND t.point_id = $${paramIndex++}` : '';
+    const createdCondition = createdByUser ? ` AND t.created_by_user = $${paramIndex++}` : '';
+    if (pointId != null) params.push(pointId);
+    if (createdByUser) params.push(createdByUser);
+
+    const query = `
+      SELECT DISTINCT
+        t.id,
+        t.client_id,
+        t.amount,
+        t.discount,
+        t.final_amount,
+        t.payment_method,
+        t.employee_discount,
+        t.created_by_user,
+        t.created_at,
+        c.first_name,
+        c.last_name,
+        c.middle_name,
+        c.client_id as client_identifier,
+        c.status as client_status,
+        (
+          SELECT json_agg(
+            json_build_object(
+              'product_name', ti.product_name,
+              'product_price', ti.product_price,
+              'quantity', ti.quantity
+            )
+          )
+          FROM transaction_items ti
+          WHERE ti.transaction_id = t.id
+        ) as items
+      FROM transactions t
+      LEFT JOIN clients c ON t.client_id = c.id
+      WHERE EXISTS (
+        SELECT 1
+        FROM transaction_items ti
+        WHERE ti.transaction_id = t.id
+        AND LOWER(ti.product_name) LIKE LOWER($1)
+      )
+      AND t.created_at >= $2::date
+      AND t.created_at < ($3::date + INTERVAL '1 day')
+      ${pointCondition}
+      ${createdCondition}
+      ORDER BY t.created_at DESC
+    `;
+
+    const result = await pool.query(query, params);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка поиска заказов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // ========== АДМИНКА: Управление товарами ==========
 
 // Получение всех категорий
@@ -1067,12 +1699,12 @@ app.get('/api/admin/products/categories', verifyAccessToken, async (req, res) =>
 // Создание категории
 app.post('/api/admin/products/categories', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
-    const { name, color, icon, displayOrder } = req.body;
+    const { name, color, icon, displayOrder, trackCharts } = req.body;
     const result = await pool.query(
-      `INSERT INTO product_categories (name, color, icon, display_order)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO product_categories (name, color, icon, display_order, track_charts)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [name, color || '#000000', icon || null, displayOrder || 0]
+      [name, color || '#000000', icon || null, displayOrder || 0, !!trackCharts]
     );
     res.json(result.rows[0]);
   } catch (error) {
@@ -1085,13 +1717,13 @@ app.post('/api/admin/products/categories', verifyAccessToken, requireAdmin, asyn
 app.put('/api/admin/products/categories/:id', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, color, icon, displayOrder } = req.body;
+    const { name, color, icon, displayOrder, trackCharts } = req.body;
     const result = await pool.query(
       `UPDATE product_categories 
-       SET name = $1, color = $2, icon = $3, display_order = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5
+       SET name = $1, color = $2, icon = $3, display_order = $4, track_charts = COALESCE($5, track_charts), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6
        RETURNING *`,
-      [name, color, icon, displayOrder, id]
+      [name, color, icon, displayOrder, trackCharts !== undefined ? !!trackCharts : null, id]
     );
     
     if (result.rows.length === 0) {
@@ -1203,7 +1835,7 @@ app.get('/api/admin/products/subcategories/:subcategoryId/products', verifyAcces
 // Создание товара
 app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
-    const { subcategoryId, name, price, description, imageUrl, displayOrder } = req.body;
+    const { subcategoryId, name, price, description, imageUrl, displayOrder, tags } = req.body;
     
     // Валидация данных
     if (!subcategoryId) {
@@ -1220,12 +1852,13 @@ app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res
     
     // Ограничиваем длину imageUrl для безопасности (хотя теперь TEXT поддерживает большие значения)
     const finalImageUrl = imageUrl && imageUrl.length > 0 ? imageUrl : null;
+    const finalTags = tags && Array.isArray(tags) ? tags.join(',') : (tags || '');
     
     const result = await pool.query(
-      `INSERT INTO products (subcategory_id, name, price, description, image_data, display_order)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO products (subcategory_id, name, price, description, image_data, display_order, tags)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [subcategoryId, name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0]
+      [subcategoryId, name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0, finalTags]
     );
     res.json(result.rows[0]);
   } catch (error) {
@@ -1248,7 +1881,7 @@ app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res
 app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, description, imageUrl, displayOrder } = req.body;
+    const { name, price, description, imageUrl, displayOrder, tags } = req.body;
     
     // Валидация данных
     if (!name || name.trim().length === 0) {
@@ -1261,13 +1894,14 @@ app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, 
     
     // Ограничиваем длину imageUrl для безопасности (хотя теперь TEXT поддерживает большие значения)
     const finalImageUrl = imageUrl && imageUrl.length > 0 ? imageUrl : null;
+    const finalTags = tags && Array.isArray(tags) ? tags.join(',') : (tags || '');
     
     const result = await pool.query(
       `UPDATE products 
-       SET name = $1, price = $2, description = $3, image_data = $4, display_order = $5, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6
+       SET name = $1, price = $2, description = $3, image_data = $4, display_order = $5, tags = $6, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7
        RETURNING *`,
-      [name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0, id]
+      [name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0, finalTags, id]
     );
     
     if (result.rows.length === 0) {

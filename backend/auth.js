@@ -3,13 +3,11 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = 'coffee_life_roasters_secret_key_2024';
 const JWT_REFRESH_SECRET = 'coffee_life_roasters_refresh_secret_key_2024';
 
-// Генерация access токена (role: 'user' | 'admin')
-const generateAccessToken = (userId, username, role = 'user') => {
-  return jwt.sign(
-    { userId, username, role },
-    JWT_SECRET,
-    { expiresIn: '15m' }
-  );
+// Генерация access токена (role: 'user' | 'admin', pointId для пользователей точки)
+const generateAccessToken = (userId, username, role = 'user', pointId = null) => {
+  const payload = { userId, username, role };
+  if (pointId != null) payload.pointId = pointId;
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
 };
 
 // Генерация refresh токена

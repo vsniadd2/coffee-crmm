@@ -1,18 +1,17 @@
 /**
  * Импорт стандартных клиентов из CSV в БД.
- * Файл: lol/QvdC+0LLQvgoJMQnQk9C+0LLRiNCwCdCh0LXRgNCz0LXQuQkJ0JrQu9C40LXQvd.csv
+ * Файл: QvdC+0LLQvgoJMQnQk9C+0LLRiNCwCdCh0LXRgNCz0LXQuQkJ0JrQu9C40LXQvd.csv
  * Формат: № | Фамилия | Имя | Отчество | Группа клиента | ... | Идентификаторы | ...
  * Все импортируемые клиенты получают status = standart, total_spent = 0.
  * Если клиент с таким client_id уже существует — пропускаем (НЕ обновляем).
- * Запуск из корня проекта: node backend/scripts/import-csv-from-excel.js
- * Или из backend: node scripts/import-csv-from-excel.js
+ * Запуск из корня проекта: node lol/import-csv.js
  */
 
 const path = require('path');
 const fs = require('fs');
-const { pool, initDatabase } = require('../database');
+const { pool, initDatabase } = require('../backend/database');
 
-const CSV_PATH = path.join(__dirname, '..', '..', 'lol', 'QvdC+0LLQvgoJMQnQk9C+0LLRiNCwCdCh0LXRgNCz0LXQuQkJ0JrQu9C40LXQvd.csv');
+const CSV_PATH = path.join(__dirname, 'QvdC+0LLQvgoJMQnQk9C+0LLRiNCwCdCh0LXRgNCz0LXQuQkJ0JrQu9C40LXQvd.csv');
 
 function parseCSVLine(line) {
   // Простой парсер CSV с разделителем табуляция

@@ -24,7 +24,7 @@ const CategoriesManageModal = ({ onClose }) => {
   const [editProduct, setEditProduct] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ type: null, id: null, name: '' })
   const DEFAULT_CATEGORY_COLOR = '#6b7280'
-  const [formData, setFormData] = useState({ name: '', displayOrder: 0, price: '', subcategoryId: '', categoryId: '', imageUrl: '' })
+  const [formData, setFormData] = useState({ name: '', displayOrder: 0, price: '', subcategoryId: '', categoryId: '', imageUrl: '', trackCharts: false })
   const [imagePreview, setImagePreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [imageCompressing, setImageCompressing] = useState(false)
@@ -85,6 +85,26 @@ const CategoriesManageModal = ({ onClose }) => {
     if (!productsBySubcategory[id]) loadProducts(id)
   }
 
+  const handleToggleTrackCharts = async (cat, e) => {
+    e.stopPropagation()
+    if (saving) return
+    setSaving(true)
+    try {
+      await adminProductsService.updateCategory(cat.id, {
+        name: cat.name,
+        color: cat.color || DEFAULT_CATEGORY_COLOR,
+        displayOrder: cat.display_order ?? 0,
+        trackCharts: !cat.track_charts
+      })
+      await loadCategories()
+      setTimeout(() => refreshAll(), 100)
+    } catch (err) {
+      setError(err?.message || 'Ошибка обновления')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSaveCategory = async () => {
     setSaving(true)
     try {
@@ -92,7 +112,8 @@ const CategoriesManageModal = ({ onClose }) => {
         await adminProductsService.updateCategory(editCategory.id, {
           name: formData.name,
           color: DEFAULT_CATEGORY_COLOR,
-          displayOrder: editCategory.display_order ?? 0
+          displayOrder: editCategory.display_order ?? 0,
+          trackCharts: formData.trackCharts
         })
         setEditCategory(null)
       } else {
@@ -100,11 +121,12 @@ const CategoriesManageModal = ({ onClose }) => {
           name: formData.name,
           color: DEFAULT_CATEGORY_COLOR,
           icon: '/img/coffee-beans-filled-roast-brew-svgrepo-com.svg',
-          displayOrder: 0
+          displayOrder: 0,
+          trackCharts: formData.trackCharts
         })
         setAddCategory(false)
       }
-      setFormData({ name: '', displayOrder: 0 })
+      setFormData({ name: '', displayOrder: 0, trackCharts: false })
       await loadCategories()
       // Обновляем данные в других компонентах без перезагрузки страницы
       setTimeout(() => refreshAll(), 100)
@@ -320,32 +342,44 @@ const CategoriesManageModal = ({ onClose }) => {
               Нажмите на категорию — откроются подгруппы. Нажмите на подгруппу — отобразятся товары. У каждой записи есть кнопки «Изменить» и «Удалить».
             </p>
             <div className="categories-manage-actions">
-              <button
+                <button
                 type="button"
                 className="categories-manage-btn-add"
-                onClick={() => { setAddCategory(true); setFormData({ name: '', displayOrder: 0 }) }}
+                onClick={() => { setAddCategory(true); setFormData({ name: '', displayOrder: 0, trackCharts: false }) }}
               >
                 + Добавить категорию
               </button>
             </div>
 
             {addCategory && (
-              <div className="categories-manage-form-block">
-                <div className="categories-manage-form-title">Новая категория</div>
-                <div className="categories-manage-form">
-                  <div className="categories-manage-form-group">
-                    <label>Название категории — отображается в выборе товаров</label>
+              <div className="categories-add-form">
+                <h3 className="categories-add-form-title">Новая категория</h3>
+                <div className="categories-add-form-body">
+                  <div className="categories-add-form-field">
+                    <label htmlFor="new-category-name">Название категории</label>
                     <input
+                      id="new-category-name"
                       type="text"
-                      className="categories-manage-input-main"
                       placeholder="Например: КОФЕ ФАСОВАННЫЙ"
                       value={formData.name}
                       onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     />
+                    <span className="categories-add-form-field-hint">Отображается в выборе товаров</span>
                   </div>
-                  <div className="categories-manage-form-actions">
-                    <button type="button" className="categories-manage-btn-save" onClick={handleSaveCategory} disabled={saving || !formData.name.trim()}>Сохранить</button>
-                    <button type="button" className="categories-manage-btn-cancel" onClick={() => setAddCategory(false)}>Отмена</button>
+                  <div className="categories-add-form-checkbox-row">
+                    <label className="categories-add-form-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={!!formData.trackCharts}
+                        onChange={e => setFormData(prev => ({ ...prev, trackCharts: e.target.checked }))}
+                      />
+                      <span className="categories-add-form-checkbox-text">Вести учёт графиками</span>
+                    </label>
+                    <p className="categories-add-form-checkbox-desc">По этой группе будет вестись учёт для графиков и отчётов</p>
+                  </div>
+                  <div className="categories-add-form-footer">
+                    <button type="button" className="categories-add-form-btn-save" onClick={handleSaveCategory} disabled={saving || !formData.name.trim()}>Сохранить</button>
+                    <button type="button" className="categories-add-form-btn-cancel" onClick={() => setAddCategory(false)}>Отмена</button>
                   </div>
                 </div>
               </div>
@@ -355,22 +389,32 @@ const CategoriesManageModal = ({ onClose }) => {
               {categories.map(cat => (
                 <li key={cat.id} className="categories-manage-item">
                   {editCategory?.id === cat.id ? (
-                    <div className="categories-manage-form-block">
-                      <div className="categories-manage-form-title">Редактирование категории</div>
-                      <div className="categories-manage-form">
-                        <div className="categories-manage-form-group">
-                          <label>Название категории</label>
+                    <div className="categories-add-form">
+                      <h3 className="categories-add-form-title">Редактирование категории</h3>
+                      <div className="categories-add-form-body">
+                        <div className="categories-add-form-field">
+                          <label htmlFor="edit-category-name">Название категории</label>
                           <input
+                            id="edit-category-name"
                             type="text"
-                            className="categories-manage-input-main"
                             placeholder="Название категории"
                             value={formData.name}
                             onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                           />
                         </div>
-                        <div className="categories-manage-form-actions">
-                          <button type="button" className="categories-manage-btn-save" onClick={handleSaveCategory} disabled={saving}>Сохранить</button>
-                          <button type="button" className="categories-manage-btn-cancel" onClick={() => setEditCategory(null)}>Отмена</button>
+                        <div className="categories-add-form-checkbox-row">
+                          <label className="categories-add-form-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={!!formData.trackCharts}
+                              onChange={e => setFormData(prev => ({ ...prev, trackCharts: e.target.checked }))}
+                            />
+                            <span className="categories-add-form-checkbox-text">Вести учёт графиками</span>
+                          </label>
+                        </div>
+                        <div className="categories-add-form-footer">
+                          <button type="button" className="categories-add-form-btn-save" onClick={handleSaveCategory} disabled={saving}>Сохранить</button>
+                          <button type="button" className="categories-add-form-btn-cancel" onClick={() => setEditCategory(null)}>Отмена</button>
                         </div>
                       </div>
                     </div>
@@ -393,7 +437,7 @@ const CategoriesManageModal = ({ onClose }) => {
                           <span className="categories-manage-name">{cat.name}</span>
                         </div>
                         <span className="categories-manage-actions-row" onClick={(e) => e.stopPropagation()}>
-                          <button type="button" className="categories-manage-btn-sm" onClick={() => { setEditCategory(cat); setFormData({ name: cat.name, displayOrder: cat.display_order || 0 }) }}>Изменить</button>
+                          <button type="button" className="categories-manage-btn-sm" onClick={() => { setEditCategory(cat); setFormData({ name: cat.name, displayOrder: cat.display_order || 0, trackCharts: !!cat.track_charts }) }}>Изменить</button>
                           <button type="button" className="categories-manage-btn-sm danger" onClick={() => setConfirmDelete({ type: 'category', id: cat.id, name: cat.name })}>Удалить</button>
                         </span>
                       </div>

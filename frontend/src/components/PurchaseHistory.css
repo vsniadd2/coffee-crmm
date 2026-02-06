@@ -185,6 +185,68 @@
     color: var(--text);
 }
 
+.payment-stats-container {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.payment-stat-card {
+    flex: 1;
+    min-width: 150px;
+    padding: 16px 20px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.payment-stat-cash {
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.05);
+}
+
+.payment-stat-card-item {
+    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.payment-stat-total {
+    border-color: rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.payment-stat-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.payment-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.payment-stat-count {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+@media (max-width: 768px) {
+    .payment-stats-container {
+        flex-direction: column;
+    }
+
+    .payment-stat-card {
+        min-width: 100%;
+    }
+}
+
 .purchases-table-wrap {
     background: var(--card);
     border-radius: var(--radius);
@@ -220,7 +282,8 @@
     text-align: left !important;
 }
 
-.purchases-table thead th:nth-child(7) {
+.purchases-table thead th:nth-child(7),
+.purchases-table thead th:nth-child(8) {
     text-align: center !important;
 }
 
@@ -342,6 +405,46 @@
     background: rgba(59, 130, 246, 0.12);
     color: #1d4ed8;
     border-color: rgba(59, 130, 246, 0.35);
+}
+
+.payment-method-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    justify-content: center;
+}
+
+.payment-badge-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    flex-shrink: 0;
+    object-fit: contain;
+}
+
+.payment-method-cash-badge {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.payment-method-cash-badge .payment-badge-icon {
+    filter: brightness(0) saturate(100%) invert(35%) sepia(85%) saturate(1200%) hue-rotate(100deg) brightness(0.4);
+}
+
+.payment-method-card-badge {
+    background: rgba(59, 130, 246, 0.12);
+    color: #1d4ed8;
+    border-color: rgba(59, 130, 246, 0.35);
+}
+
+.payment-method-card-badge .payment-badge-icon {
+    filter: brightness(0) saturate(100%) invert(25%) sepia(95%) saturate(2000%) hue-rotate(220deg) brightness(0.6);
 }
 
 .purchase-history-loading,

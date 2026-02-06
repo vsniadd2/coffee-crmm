@@ -1,17 +1,16 @@
 /**
- * Импорт клиентов GOLD из Excel (lol/gold 10.xlsx) в БД.
+ * Импорт клиентов GOLD из Excel (gold 10.xlsx) в БД.
  * Ожидаемые колонки: Имя, Фамилия, Отчество (или одна ФИО), Идентификаторы.
  * Опционально: Дата рождения (если нет — не сохраняем, в таблице clients её нет).
  * Все импортируемые клиенты получают status = gold.
- * Запуск из корня проекта: node backend/scripts/import-gold-from-excel.js
- * Или из backend: node scripts/import-gold-from-excel.js
+ * Запуск из корня проекта: node lol/import-gold.js
  */
 
 const path = require('path');
 const XLSX = require('xlsx');
-const { pool, initDatabase } = require('../database');
+const { pool, initDatabase } = require('../backend/database');
 
-const EXCEL_PATH = path.join(__dirname, '..', '..', 'lol', 'gold 10.xlsx');
+const EXCEL_PATH = path.join(__dirname, 'gold 10.xlsx');
 
 function normalizeHeader(str) {
   if (str == null || typeof str !== 'string') return '';

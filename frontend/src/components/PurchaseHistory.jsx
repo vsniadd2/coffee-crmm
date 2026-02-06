@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useDataRefresh } from '../contexts/DataRefreshContext'
 import { purchaseHistoryService } from '../services/purchaseHistoryService'
 import { deletionTicketsService } from '../services/deletionTicketsService'
+import { pointsService } from '../services/pointsService'
 import OrderDetailsModal from './OrderDetailsModal'
 import ReplacementOrderModal from './ReplacementOrderModal'
 import ConfirmDialog from './ConfirmDialog'
@@ -56,6 +57,10 @@ const PurchaseHistory = () => {
   const [confirmDeleteOrder, setConfirmDeleteOrder] = useState(null)
   const [activeTickets, setActiveTickets] = useState([])
   const [loadingTickets, setLoadingTickets] = useState(false)
+  const [paymentStats, setPaymentStats] = useState(null)
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [points, setPoints] = useState([])
+  const [selectedPointId, setSelectedPointId] = useState('')
   const debounceTimerRef = useRef(null)
   const isInitialLoad = useRef(true)
   const tableScrollRef = useRef(null)
@@ -142,12 +147,14 @@ const PurchaseHistory = () => {
       }
       setError(null)
       try {
+        const pointIdParam = isAdmin && selectedPointId !== '' ? selectedPointId : null
         const data = await purchaseHistoryService.getPurchases({
           page,
           limit: 20,
           dateFrom: dateFrom || null,
           dateTo: dateTo || null,
-          searchName: debouncedSearchName || null
+          searchName: debouncedSearchName || null,
+          pointId: pointIdParam
         })
         
         // Обновляем состояние с использованием requestAnimationFrame для плавности
@@ -161,12 +168,14 @@ const PurchaseHistory = () => {
         if (e?.message === 'UNAUTHORIZED') {
           const refreshed = await refreshAccessToken()
           if (refreshed) {
+            const pointIdParam = isAdmin && selectedPointId !== '' ? selectedPointId : null
             const data = await purchaseHistoryService.getPurchases({
               page,
               limit: 20,
               dateFrom: dateFrom || null,
               dateTo: dateTo || null,
-              searchName: debouncedSearchName || null
+              searchName: debouncedSearchName || null,
+              pointId: pointIdParam
             })
             requestAnimationFrame(() => {
               setPurchases(data.purchases || [])
@@ -208,7 +217,7 @@ const PurchaseHistory = () => {
         isUserTypingRef.current = false
       })
     }
-    }, [page, dateFrom, dateTo, debouncedSearchName, refreshAccessToken, searchName])
+    }, [page, dateFrom, dateTo, debouncedSearchName, refreshAccessToken, searchName, isAdmin, selectedPointId])
 
   useEffect(() => {
     loadPurchases()
@@ -288,6 +297,63 @@ const PurchaseHistory = () => {
     return () => clearInterval(interval)
   }, [loadActiveTickets])
 
+  // Загрузка статистики по способам оплаты
+  const loadPaymentStats = useCallback(async () => {
+    try {
+      setLoadingStats(true)
+      try {
+        const pointIdParam = isAdmin && selectedPointId !== '' ? selectedPointId : null
+        const stats = await purchaseHistoryService.getPaymentStats(
+          dateFrom || null,
+          dateTo || null,
+          pointIdParam
+        )
+        setPaymentStats(stats)
+      } catch (e) {
+        if (e?.message === 'UNAUTHORIZED') {
+          const refreshed = await refreshAccessToken()
+          if (refreshed) {
+            const pointIdParam = isAdmin && selectedPointId !== '' ? selectedPointId : null
+            const stats = await purchaseHistoryService.getPaymentStats(
+              dateFrom || null,
+              dateTo || null,
+              pointIdParam
+            )
+            setPaymentStats(stats)
+            return
+          }
+        }
+        throw e
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки статистики по способам оплаты:', err)
+      setPaymentStats(null)
+    } finally {
+      setLoadingStats(false)
+    }
+  }, [dateFrom, dateTo, refreshAccessToken, isAdmin, selectedPointId])
+
+  useEffect(() => {
+    loadPaymentStats()
+  }, [loadPaymentStats])
+
+  const loadPoints = useCallback(async () => {
+    if (!isAdmin) return
+    try {
+      const list = await pointsService.getPoints()
+      setPoints(Array.isArray(list) ? list : [])
+    } catch (e) {
+      if (e?.message === 'UNAUTHORIZED') {
+        await refreshAccessToken()
+        const list = await pointsService.getPoints()
+        setPoints(Array.isArray(list) ? list : [])
+      }
+    }
+  }, [isAdmin, refreshAccessToken])
+
+  useEffect(() => {
+    if (isAdmin) loadPoints()
+  }, [isAdmin, loadPoints])
 
   const handleClearFilters = () => {
     setDateFrom('')
@@ -468,6 +534,22 @@ const PurchaseHistory = () => {
           </div>
         )}
         <div className="purchase-history-filters">
+          {isAdmin && points.length > 0 && (
+            <div className="filter-group">
+              <label htmlFor="pointSelect">Точка:</label>
+              <select
+                id="pointSelect"
+                className="text-input"
+                value={selectedPointId}
+                onChange={(e) => { setSelectedPointId(e.target.value); setPage(1) }}
+              >
+                <option value="">Все точки</option>
+                {points.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="filter-group">
             <label htmlFor="searchName">Имя/Фамилия:</label>
             <input
@@ -521,6 +603,31 @@ const PurchaseHistory = () => {
             </button>
           )}
         </div>
+        {paymentStats && (
+          <div className="payment-stats-container">
+            <div className="payment-stat-card payment-stat-cash">
+              <div className="payment-stat-label">Наличные</div>
+              <div className="payment-stat-value">
+                {paymentStats.cash.total.toFixed(2)} BYN
+              </div>
+              <div className="payment-stat-count">{paymentStats.cash.count} продаж</div>
+            </div>
+            <div className="payment-stat-card payment-stat-card-item">
+              <div className="payment-stat-label">Карта</div>
+              <div className="payment-stat-value">
+                {paymentStats.card.total.toFixed(2)} BYN
+              </div>
+              <div className="payment-stat-count">{paymentStats.card.count} продаж</div>
+            </div>
+            <div className="payment-stat-card payment-stat-total">
+              <div className="payment-stat-label">Всего</div>
+              <div className="payment-stat-value">
+                {paymentStats.total.total.toFixed(2)} BYN
+              </div>
+              <div className="payment-stat-count">{paymentStats.total.count} продаж</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -558,6 +665,7 @@ const PurchaseHistory = () => {
                       <th>Сумма</th>
                       <th>Скидка</th>
                       <th>Итого</th>
+                      <th>Оплата</th>
                       <th>Статус</th>
                     </tr>
                   </thead>
@@ -577,6 +685,19 @@ const PurchaseHistory = () => {
                           {purchase.discount > 0 ? `${purchase.discount}%` : '—'}
                         </td>
                         <td className="num mono" data-label="Итого">{formatCurrency(purchase.final_amount)}</td>
+                        <td data-label="Оплата">
+                          {purchase.payment_method === 'card' ? (
+                            <span className="payment-method-badge payment-method-card-badge">
+                              <img src="/img/card-svgrepo-com.svg" alt="Карта" className="payment-badge-icon" />
+                              <span>Карта</span>
+                            </span>
+                          ) : (
+                            <span className="payment-method-badge payment-method-cash-badge">
+                              <img src="/img/money-svgrepo-com.svg" alt="Наличные" className="payment-badge-icon" />
+                              <span>Нал</span>
+                            </span>
+                          )}
+                        </td>
                         <td data-label="Статус">
                           {(purchase.operation_type || 'sale').toLowerCase() === 'return' || (purchase.operation_type || 'sale').toLowerCase() === 'replacement' ? (
                             <span className="status-chip operation-replacement">Замена</span>

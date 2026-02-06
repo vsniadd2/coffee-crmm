@@ -211,12 +211,90 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+.employee-discount-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.employee-discount-btn {
+    padding: 10px 16px;
+    border: 2px solid var(--accent-purple);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--accent-purple);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+}
+
+.employee-discount-btn:hover {
+    background: var(--accent-purple-light);
+    border-color: var(--accent-purple);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.employee-discount-btn.active {
+    background: var(--accent-purple);
+    color: white;
+    border-color: var(--accent-purple);
+}
+
+.employee-discount-btn.active:hover {
+    background: var(--primary-hover);
+}
+
+.employee-discount-info {
+    font-size: 0.85rem;
+    color: var(--muted);
+    padding-left: 4px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.employee-checkbox-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-soft);
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.employee-checkbox-wrap input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+}
+
+.employee-checkbox-hint {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.employee-discount-badge {
+    font-size: 0.9rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
 .new-client-actions {
     display: flex;
     gap: 12px;
-    margin: 24px 0 0 0;
-    padding-top: 20px;
-    border-top: 1px solid var(--border-soft);
+    margin: 16px 0 0 0;
 }
 
 .new-client-actions .btn-submit {

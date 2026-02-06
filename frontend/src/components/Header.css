@@ -48,53 +48,36 @@
     align-items: center;
 }
 
+/* Единый размер и стиль всех кнопок навигации в header */
 .nav-link {
-    background: transparent;
+    background: var(--bg-soft);
     color: var(--text-secondary);
-    border: 1px solid transparent;
+    border: none;
     padding: 12px 20px;
     border-radius: var(--radius-sm);
     font-size: 1rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
     font-weight: 500;
-    min-height: 44px;
+    min-height: 48px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
 }
 
 .nav-link:hover {
-    background: var(--accent-purple-light);
-    color: var(--accent-purple);
+    background: var(--border-soft);
+    color: var(--text);
 }
 
 .nav-link.active {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
+    background: #111;
+    color: #fff;
 }
 
 .nav-link.active:hover {
-    background: var(--primary-hover);
-}
-
-/* Главная кнопка навигации — для быстрого доступа в кофейне */
-.nav-link-primary {
-    font-weight: 600;
-    padding: 14px 24px;
-    min-height: 48px;
-}
-
-.nav-link-primary.active {
-    background: var(--primary);
-    color: white;
-}
-
-.nav-link-primary:not(.active):hover {
-    background: var(--primary-light);
-    color: var(--text);
-    border-color: var(--border);
+    background: #222;
+    color: #fff;
 }
 
 .client-search {
@@ -277,6 +260,64 @@
 }
 
 
+.header-point-wrap {
+    position: relative;
+}
+
+.header-point-btn {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 12px 20px;
+    min-height: 48px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-soft);
+    border: 1px solid var(--border-soft);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.header-point-btn:hover {
+    background: var(--border-soft);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+.header-point-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    min-width: 140px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.header-point-dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #dc2626;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.header-point-dropdown-item:hover {
+    background: rgba(220, 38, 38, 0.08);
+}
+
 .logout-btn {
     background: transparent;
     color: #dc2626;
@@ -311,8 +352,15 @@
     }
 
     .nav-link {
-        padding: 8px 14px;
-        font-size: 0.9rem;
+        padding: 10px 16px;
+        font-size: 0.95rem;
+        min-height: 48px;
+    }
+
+    .header-point-btn {
+        padding: 10px 16px;
+        min-height: 48px;
+        font-size: 0.95rem;
     }
 
     .add-client-btn,
@@ -409,72 +457,68 @@
     width: 100%;
     text-align: left;
     padding: 14px 20px;
+    min-height: 48px;
     border-radius: var(--radius-sm);
-    border: 1px solid transparent;
+    border: none;
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-    background: transparent;
+    transition: background 0.2s ease, color 0.2s ease;
+    background: var(--bg-soft);
     color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
 }
 
 .mobile-nav-link:hover {
-    background: var(--primary-light);
+    background: var(--border-soft);
+    color: var(--text);
+}
+
+.mobile-nav-link.active {
+    background: #111;
+    color: #fff;
+}
+
+.mobile-nav-link.active:hover {
+    background: #222;
+    color: #fff;
+}
+
+.mobile-nav-point {
+    margin-top: auto;
+    margin-bottom: 8px;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mobile-nav-point-btn {
+    width: 100%;
+    text-align: left;
+    padding: 14px 20px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-soft);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-soft);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.mobile-nav-point-btn:hover {
+    background: var(--border-soft);
     color: var(--text);
     border-color: var(--border);
 }
 
-.mobile-nav-link.active {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
-
-.mobile-nav-link-primary {
-    font-weight: 600;
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
-
-.mobile-nav-link-primary:not(.active):hover {
-    background: var(--primary-hover);
-}
-
-.mobile-nav-link-primary.active {
-    background: var(--primary);
-    color: white;
-}
-
-/* На телефоне чёрным только активный пункт меню; неактивные — серые */
-@media (max-width: 768px) {
-    .mobile-nav-link,
-    .mobile-nav-link-primary {
-        background: transparent !important;
-        color: var(--text-secondary);
-        border-color: transparent;
-    }
-
-    .mobile-nav-link:hover,
-    .mobile-nav-link-primary:not(.active):hover {
-        background: var(--primary-light) !important;
-        color: var(--text);
-        border-color: var(--border);
-    }
-
-    .mobile-nav-link.active,
-    .mobile-nav-link-primary.active {
-        background: var(--primary) !important;
-        color: white !important;
-        border-color: var(--primary);
-    }
-}
-
 .mobile-nav-logout {
-    margin-top: auto;
+    margin-top: 0;
     color: #dc2626;
-    border-color: rgba(220, 38, 38, 0.3);
+    border: none;
 }
 
 .mobile-nav-logout:hover {
@@ -486,7 +530,7 @@
 /* Планшеты (768px и меньше) — переключаем на мобильное меню с кофе */
 @media (max-width: 768px) {
     .header-nav-desktop,
-    .logout-btn-desktop {
+    .header-point-wrap {
         display: none !important;
     }
 
@@ -579,11 +623,7 @@
         flex: 1;
         padding: 12px 10px;
         font-size: 0.85rem;
-        min-height: 44px;
-    }
-
-    .nav-link-primary {
-        padding: 14px 12px;
+        min-height: 48px;
     }
 
     .add-client-btn,
