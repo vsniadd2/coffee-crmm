@@ -3,15 +3,19 @@
 # Запускать на сервере из корня проекта: bash scripts/deploy-on-server.sh
 #
 # БД НЕ удаляется: данные PostgreSQL хранятся в именованном томе postgres_data.
-# Мы только пересобираем образы backend/frontend и перезапускаем контейнеры.
-# Не запускайте «docker compose down -v» — флаг -v удаляет тома и данные БД.
+# Миграции применяются автоматически при старте backend (новые .sql из migrations/).
+# Не используйте «docker compose down -v» — флаг -v удалит тома и данные БД.
 
 set -e
-echo "→ git pull..."
-git pull
+echo "→ 1. Обновление кода из Git..."
+git pull origin main 2>/dev/null || git pull
 
-echo "→ Пересборка и перезапуск контейнеров (том postgres_data не трогаем, БД сохраняется)..."
+echo "→ 2. Пересборка и перезапуск контейнеров..."
+echo "   (БД сохраняется, миграции применятся при старте backend)"
 docker compose up -d --build
 
-echo "→ Готово. Проверка контейнеров:"
+echo "→ 3. Готово. Статус:"
 docker compose ps
+
+echo ""
+echo "Миграции БД применяются при каждом старте backend. Проверить логи: docker compose logs backend"
