@@ -1,5 +1,10 @@
 version: '3.8'
 
+# Именованный volume — данные БД сохраняются при перезапуске и git pull.
+# Удаляется только при явном: docker compose down -v
+volumes:
+  postgres_data:
+
 services:
   postgres:
     image: postgres:15
@@ -12,9 +17,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      # Путь задаётся через POSTGRES_DATA_PATH. На сервере укажите абсолютный путь
-      # (например /var/lib/coffee-crm/postgres_data), чтобы данные не зависели от UID.
-      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - coffee_network
     healthcheck:

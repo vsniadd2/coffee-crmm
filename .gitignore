@@ -32,6 +32,7 @@ logs/
 # Database
 *.sql
 !backend/migrations/*.sql
+backups/
 *.sqlite
 postgres_data/
 data/
