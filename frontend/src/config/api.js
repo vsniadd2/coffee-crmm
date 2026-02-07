@@ -27,3 +27,15 @@ export const getAuthHeaders = () => {
     ...(token && { Authorization: `Bearer ${token}` })
   }
 }
+
+/** Проверяет, истёк ли access token (с запасом 60 сек) */
+export function isAccessTokenExpired(token) {
+  if (!token) return true
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    if (typeof payload.exp !== 'number') return true
+    return payload.exp * 1000 < Date.now() + 60000
+  } catch {
+    return true
+  }
+}

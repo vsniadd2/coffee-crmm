@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { authService } from '../services/authService'
+import { isAccessTokenExpired } from '../config/api'
 
 const AuthContext = createContext(null)
 
@@ -65,14 +66,16 @@ export const AuthProvider = ({ children }) => {
   }
 
   const refreshAccessToken = async () => {
-    if (!refreshToken) {
+    const rtk = refreshToken || localStorage.getItem('refreshToken')
+    if (!rtk) {
       logout()
       return false
     }
 
     try {
-      const data = await authService.refreshToken(refreshToken)
+      const data = await authService.refreshToken(rtk)
       setAccessToken(data.accessToken)
+      setRefreshToken(rtk)
       localStorage.setItem('accessToken', data.accessToken)
       if (data.user) {
         setUser(prev => {
@@ -88,6 +91,14 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
+  /** Обновляет access token, если он истёк (чтобы не получать 403 при запросах) */
+  const ensureValidToken = async () => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    if (!isAccessTokenExpired(token)) return
+    await refreshAccessToken()
+  }
+
   const value = {
     user,
     accessToken,
@@ -95,6 +106,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     refreshAccessToken,
+    ensureValidToken,
     loading,
     showHelloAfterLogin,
     clearShowHello

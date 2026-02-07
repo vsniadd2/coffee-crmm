@@ -111,7 +111,7 @@ const OrderDetailsPage = () => {
                   outerRadius={140}
                   paddingAngle={2}
                   dataKey="revenue"
-                  label={({ percentage }) => `${percentage}%`}
+                  label={({ percentage }) => `${Number(percentage ?? 0).toFixed(1)}%`}
                   labelLine={false}
                 >
                   {donutData.map((entry, index) => (

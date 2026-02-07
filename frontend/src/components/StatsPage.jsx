@@ -14,7 +14,7 @@ import {
 import './StatsPage.css'
 //g
 const StatsPage = () => {
-  const { refreshAccessToken, user } = useAuth()
+  const { refreshAccessToken, ensureValidToken, user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const { showNotification } = useNotification()
   const [loading, setLoading] = useState(true) // только для первой загрузки
@@ -85,6 +85,7 @@ const StatsPage = () => {
   }
 
   const loadCategories = async () => {
+    await ensureValidToken()
     try {
       const tree = await getProductsTree()
       const cats = Object.values(tree).map(cat => ({
@@ -114,6 +115,7 @@ const StatsPage = () => {
 
   const loadPoints = async () => {
     if (!isAdmin) return
+    await ensureValidToken()
     try {
       const list = await pointsService.getPoints()
       setPoints(Array.isArray(list) ? list : [])
@@ -131,6 +133,7 @@ const StatsPage = () => {
       setProducts([])
       return
     }
+    await ensureValidToken()
     try {
       const { dateFrom, dateTo } = getDateRange(period)
       const data = await orderStatsService.getCategoryProductsStats(dateFrom, dateTo, categoryId, pointIdParam)
@@ -151,6 +154,7 @@ const StatsPage = () => {
     `day_${date}_${catId || ''}_${ptId || ''}`
 
   const loadDayTopProducts = async (date, categoryId = null) => {
+    await ensureValidToken()
     const key = cacheKeyDay(date, categoryId, pointIdParam)
     const cached = cacheRef.current[key]
     if (cached) {
@@ -194,6 +198,7 @@ const StatsPage = () => {
   }
 
   const loadStats = async () => {
+    await ensureValidToken()
     const { dateFrom, dateTo } = getDateRange(period)
     const key = cacheKeyStats(productViewType, dateFrom, dateTo, selectedCategoryId, pointIdParam)
     const cached = cacheRef.current[key]
@@ -341,7 +346,7 @@ const StatsPage = () => {
                   outerRadius={140}
                   paddingAngle={2}
                   dataKey="revenue"
-                  label={({ percentage }) => `${percentage}%`}
+                  label={({ percentage }) => `${Number(percentage ?? 0).toFixed(1)}%`}
                   labelLine={false}
                 >
                   {donutData.map((entry, index) => (
@@ -522,34 +527,36 @@ const StatsPage = () => {
                 </div>
               </div>
 
+              {/* Дата для любого типа графика (у каждого типа своя дата в datesByViewType) */}
+              <div className="filter-group">
+                <label htmlFor="stats-date-select">
+                  {productViewType === 'day' ? 'Выберите день:' : 'Дата (для периода «День»):'}
+                </label>
+                <input
+                  id="stats-date-select"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="stats-date-input"
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
               {productViewType === 'day' && (
-                <>
-                  <div className="filter-group">
-                    <label htmlFor="day-select">Выберите день:</label>
-                    <input
-                      id="day-select"
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      className="stats-date-input"
-                      max={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
-                  <div className="filter-group">
-                    <label htmlFor="category-select-day">Категория (опционально):</label>
-                    <select
-                      id="category-select-day"
-                      value={selectedCategoryId}
-                      onChange={(e) => setSelectedCategoryId(e.target.value)}
-                      className="stats-select"
-                    >
-                      <option value="">Все категории</option>
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
+                <div className="filter-group">
+                  <label htmlFor="category-select-day">Категория (опционально):</label>
+                  <select
+                    id="category-select-day"
+                    value={selectedCategoryId}
+                    onChange={(e) => setSelectedCategoryId(e.target.value)}
+                    className="stats-select"
+                  >
+                    <option value="">Все категории</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
               )}
 
               {productViewType === 'category' && (
@@ -609,7 +616,7 @@ const StatsPage = () => {
                             outerRadius={140}
                             paddingAngle={2}
                             dataKey="revenue"
-                            label={({ percentage }) => `${percentage}%`}
+                            label={({ percentage }) => `${Number(percentage ?? 0).toFixed(1)}%`}
                             labelLine={false}
                           >
                             {dayTopProducts.products.map((entry, index) => (
