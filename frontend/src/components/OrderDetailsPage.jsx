@@ -75,14 +75,14 @@ const OrderDetailsPage = () => {
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 
   const renderPieLabel = (props) => {
-    const { cx, cy, midAngle, outerRadius, percent, percentage } = props
+    const { cx, cy, midAngle, innerRadius, outerRadius, percent, percentage } = props
     const RADIAN = Math.PI / 180
-    const r = outerRadius + 24
+    const r = ((innerRadius || 0) + outerRadius) / 2
     const x = cx + r * Math.cos(-midAngle * RADIAN)
     const y = cy + r * Math.sin(-midAngle * RADIAN)
     const pct = percentage != null ? Number(percentage) : (percent != null ? percent * 100 : 0)
     return (
-      <text x={x} y={y} fill="var(--text)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" style={{ fontSize: 14, fontWeight: 600 }}>
+      <text x={x} y={y} fill="#1a1a1a" stroke="#fff" strokeWidth={2} strokeLinejoin="round" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 13, fontWeight: 600, paintOrder: 'stroke' }}>
         {`${pct.toFixed(1)}%`}
       </text>
     )
