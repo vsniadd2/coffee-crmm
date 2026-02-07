@@ -158,6 +158,14 @@
   text-align: center;
   color: var(--muted);
   font-size: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty-state-hint {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
 }
 
 .chart-summary {
@@ -588,6 +596,11 @@
   flex: 1;
   min-width: 300px;
   max-width: 400px;
+  overflow: visible;
+}
+
+.donut-chart-container .recharts-wrapper {
+  overflow: visible;
 }
 
 .day-top-products-legend {

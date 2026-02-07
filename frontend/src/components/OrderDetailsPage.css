@@ -152,6 +152,11 @@
   flex: 1;
   min-width: 300px;
   max-width: 400px;
+  overflow: visible;
+}
+
+.donut-chart-container .recharts-wrapper {
+  overflow: visible;
 }
 
 .day-top-products-legend {

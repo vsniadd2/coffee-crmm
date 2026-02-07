@@ -31,11 +31,27 @@ function getPointFilter(req) {
   return { pointId: req.user?.pointId ?? null, isAdmin: false };
 }
 
-// point_id при создании транзакции: user — своя точка, admin — из body или null
-function getPointIdForInsert(req) {
-  return req.user?.role === 'admin'
-    ? (req.body.pointId != null ? parseInt(req.body.pointId, 10) : null)
-    : (req.user?.pointId ?? null);
+// point_id при создании транзакции: user — своя точка, admin — из body или точка из профиля (червенский)
+async function getPointIdForInsert(req) {
+  if (req.user?.role === 'admin') {
+    const fromBody = req.body.pointId;
+    if (fromBody != null && fromBody !== '') {
+      const id = parseInt(fromBody, 10);
+      if (!Number.isNaN(id)) return id;
+    }
+    let pointId = req.user?.pointId ?? null;
+    // Fallback: если в токене нет pointId (старый токен), берём из БД
+    if (pointId == null && req.user?.userId) {
+      try {
+        const row = await pool.query('SELECT point_id FROM admins WHERE id = $1', [req.user.userId]);
+        pointId = row.rows[0]?.point_id ?? null;
+      } catch {
+        pointId = null;
+      }
+    }
+    return pointId;
+  }
+  return req.user?.pointId ?? null;
 }
 
 const app = express();
@@ -361,7 +377,7 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
     // Создание транзакции
     const paymentMethod = req.body.paymentMethod || 'cash';
     const createdByUser = req.user?.username || null;
-    const pointId = getPointIdForInsert(req);
+    const pointId = await getPointIdForInsert(req);
     const transactionResult = await pool.query(`
       INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -447,7 +463,7 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
     // Создание транзакции
     const paymentMethod = req.body.paymentMethod || 'cash';
     const createdByUser = req.user?.username || null;
-    const pointId = getPointIdForInsert(req);
+    const pointId = await getPointIdForInsert(req);
     const transactionResult = await dbClient.query(
       'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
       [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
@@ -513,7 +529,7 @@ app.post('/api/purchases/anonymous', verifyAccessToken, async (req, res) => {
 
     const paymentMethod = req.body.paymentMethod || 'cash';
     const createdByUser = req.user?.username || null;
-    const pointId = getPointIdForInsert(req);
+    const pointId = await getPointIdForInsert(req);
     const transactionResult = await pool.query(
       'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7) RETURNING id',
       [priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
@@ -1835,7 +1851,7 @@ app.get('/api/admin/products/subcategories/:subcategoryId/products', verifyAcces
 // Создание товара
 app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
-    const { subcategoryId, name, price, description, imageUrl, displayOrder, tags } = req.body;
+    const { subcategoryId, name, price, description, imageUrl, imageData, displayOrder, tags } = req.body;
     
     // Валидация данных
     if (!subcategoryId) {
@@ -1850,15 +1866,16 @@ app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res
       return res.status(400).json({ error: 'Цена должна быть числом' });
     }
     
-    // Ограничиваем длину imageUrl для безопасности (хотя теперь TEXT поддерживает большие значения)
-    const finalImageUrl = imageUrl && imageUrl.length > 0 ? imageUrl : null;
+    // imageUrl или imageData — base64 строка для хранения в image_data
+    const imageSource = imageUrl ?? imageData;
+    const finalImageData = imageSource && typeof imageSource === 'string' && imageSource.length > 0 ? imageSource : null;
     const finalTags = tags && Array.isArray(tags) ? tags.join(',') : (tags || '');
     
     const result = await pool.query(
       `INSERT INTO products (subcategory_id, name, price, description, image_data, display_order, tags)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [subcategoryId, name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0, finalTags]
+      [subcategoryId, name.trim(), parseFloat(price), description || null, finalImageData, displayOrder || 0, finalTags]
     );
     res.json(result.rows[0]);
   } catch (error) {
@@ -1881,7 +1898,7 @@ app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res
 app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, description, imageUrl, displayOrder, tags } = req.body;
+    const { name, price, description, imageUrl, imageData, displayOrder, tags } = req.body;
     
     // Валидация данных
     if (!name || name.trim().length === 0) {
@@ -1892,8 +1909,9 @@ app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'Цена должна быть числом' });
     }
     
-    // Ограничиваем длину imageUrl для безопасности (хотя теперь TEXT поддерживает большие значения)
-    const finalImageUrl = imageUrl && imageUrl.length > 0 ? imageUrl : null;
+    // imageUrl или imageData — base64 строка для хранения в image_data
+    const imageSource = imageUrl ?? imageData;
+    const finalImageData = imageSource && typeof imageSource === 'string' && imageSource.length > 0 ? imageSource : null;
     const finalTags = tags && Array.isArray(tags) ? tags.join(',') : (tags || '');
     
     const result = await pool.query(
@@ -1901,7 +1919,7 @@ app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, 
        SET name = $1, price = $2, description = $3, image_data = $4, display_order = $5, tags = $6, updated_at = CURRENT_TIMESTAMP
        WHERE id = $7
        RETURNING *`,
-      [name.trim(), parseFloat(price), description || null, finalImageUrl, displayOrder || 0, finalTags, id]
+      [name.trim(), parseFloat(price), description || null, finalImageData, displayOrder || 0, finalTags, id]
     );
     
     if (result.rows.length === 0) {

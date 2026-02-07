@@ -134,6 +134,88 @@ const CategoriesPage = () => {
     }
   }
 
+  // Сжатие изображения перед отправкой
+  const compressImage = (file, maxWidth = 800, maxHeight = 800, quality = 0.8) => {
+    const MAX_CANVAS = 4096
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Не удалось прочитать файл'))
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result
+        if (!dataUrl || typeof dataUrl !== 'string') {
+          reject(new Error('Не удалось прочитать файл'))
+          return
+        }
+        const img = new Image()
+        img.onerror = () => reject(new Error('Не удалось загрузить изображение'))
+        img.onload = () => {
+          let width = img.naturalWidth || img.width
+          let height = img.naturalHeight || img.height
+          if (!width || !height) {
+            reject(new Error('Неверные размеры изображения'))
+            return
+          }
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height)
+            width = Math.round(width * ratio)
+            height = Math.round(height * ratio)
+          }
+          if (width > MAX_CANVAS || height > MAX_CANVAS) {
+            const scale = MAX_CANVAS / Math.max(width, height)
+            width = Math.round(width * scale)
+            height = Math.round(height * scale)
+          }
+          if (width < 1 || height < 1) {
+            reject(new Error('Изображение слишком маленькое'))
+            return
+          }
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Браузер не поддерживает обработку изображений'))
+            return
+          }
+          ctx.drawImage(img, 0, 0, width, height)
+          try {
+            resolve(canvas.toDataURL('image/jpeg', quality))
+          } catch {
+            try {
+              resolve(canvas.toDataURL('image/png'))
+            } catch {
+              reject(new Error('Не удалось сжать изображение. Попробуйте JPG или PNG.'))
+            }
+          }
+        }
+        img.src = dataUrl
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handleImageSelect = async (file) => {
+    setError(null)
+    if (file.size > 25 * 1024 * 1024) {
+      setError('Размер файла не должен превышать 25 МБ')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Выберите файл изображения (JPG, PNG, GIF)')
+      return
+    }
+    setImageCompressing(true)
+    try {
+      const compressedBase64 = await compressImage(file, 800, 800, 0.85)
+      setFormData(prev => ({ ...prev, imageUrl: compressedBase64 }))
+      setImagePreview(compressedBase64)
+    } catch (err) {
+      setError(err?.message || 'Ошибка обработки изображения.')
+    } finally {
+      setImageCompressing(false)
+    }
+  }
+
   const handleSaveSubcategory = async () => {
     setSaving(true)
     try {
@@ -169,11 +251,8 @@ const CategoriesPage = () => {
       const productData = {
         name: formData.name,
         price: parseFloat(formData.price) || 0,
-        displayOrder: formData.displayOrder || 0
-      }
-
-      if (imagePreview && imagePreview.startsWith('data:')) {
-        productData.imageData = imagePreview
+        displayOrder: formData.displayOrder || 0,
+        imageUrl: formData.imageUrl || (imagePreview?.startsWith('data:') ? imagePreview : null) || null
       }
 
       if (editProduct) {
@@ -466,13 +545,20 @@ const CategoriesPage = () => {
                                     className="categories-input"
                                   />
                                   <ImageUploader
-                                    value={imagePreview}
-                                    onChange={(data) => {
-                                      setImagePreview(data)
-                                      setFormData({ ...formData, imageUrl: data || '' })
-                                    }}
-                                    onCompressingChange={setImageCompressing}
+                                    onImageSelect={handleImageSelect}
+                                    currentImage={imagePreview}
+                                    maxSizeMB={25}
+                                    disabled={imageCompressing}
                                   />
+                                  {imagePreview && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setImagePreview(null); setFormData(prev => ({ ...prev, imageUrl: '' })) }}
+                                      style={{ marginTop: 10, padding: '8px 16px', fontSize: '0.9rem', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                      Удалить изображение
+                                    </button>
+                                  )}
                                   <div className="categories-form-actions">
                                     <button
                                       type="button"
@@ -548,13 +634,20 @@ const CategoriesPage = () => {
                                           className="categories-input"
                                         />
                                         <ImageUploader
-                                          value={imagePreview}
-                                          onChange={(data) => {
-                                            setImagePreview(data)
-                                            setFormData({ ...formData, imageUrl: data || '' })
-                                          }}
-                                          onCompressingChange={setImageCompressing}
+                                          onImageSelect={handleImageSelect}
+                                          currentImage={imagePreview || formData.imageUrl || null}
+                                          maxSizeMB={25}
+                                          disabled={imageCompressing}
                                         />
+                                        {(imagePreview || editProduct?.image_data) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => { setImagePreview(null); setFormData(prev => ({ ...prev, imageUrl: '' })) }}
+                                            style={{ marginTop: 10, padding: '8px 16px', fontSize: '0.9rem', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                          >
+                                            Удалить изображение
+                                          </button>
+                                        )}
                                         <div className="categories-form-actions">
                                           <button
                                             type="button"

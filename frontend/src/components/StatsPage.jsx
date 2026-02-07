@@ -29,7 +29,8 @@ const StatsPage = () => {
   const [dayTopProducts, setDayTopProducts] = useState(null)
   const [points, setPoints] = useState([])
   const [selectedPointId, setSelectedPointId] = useState('') // для админа: '' = все точки
-  const todayStr = () => new Date().toISOString().split('T')[0]
+  // Локальная дата (YYYY-MM-DD), не UTC — чтобы max в календаре совпадал с «сегодня» пользователя
+  const todayStr = () => new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
   // У каждого типа графика своя история: дата и период
   const [datesByViewType, setDatesByViewType] = useState(() => ({
     day: todayStr(),
@@ -58,6 +59,8 @@ const StatsPage = () => {
     setPeriodsByViewType(prev => ({ ...prev, [productViewType]: p }))
   }
 
+  const toLocalDateStr = (d) => d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
+
   const getDateRange = (periodType, dateStr = null) => {
     const useDate = dateStr ?? selectedDate
     if (periodType === 'day' && useDate) {
@@ -67,20 +70,23 @@ const StatsPage = () => {
     let dateFrom = new Date()
     switch (periodType) {
       case 'month':
-        dateFrom.setMonth(today.getMonth() - 1)
+        dateFrom.setDate(1)
         break
       case 'quarter':
-        dateFrom.setMonth(today.getMonth() - 3)
+        const qMonth = Math.floor(today.getMonth() / 3) * 3
+        dateFrom.setMonth(qMonth)
+        dateFrom.setDate(1)
         break
       case 'year':
-        dateFrom.setFullYear(today.getFullYear() - 1)
+        dateFrom.setMonth(0)
+        dateFrom.setDate(1)
         break
       default:
         dateFrom.setMonth(today.getMonth() - 1)
     }
     return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: today.toISOString().split('T')[0]
+      dateFrom: toLocalDateStr(dateFrom),
+      dateTo: toLocalDateStr(today)
     }
   }
 
@@ -308,6 +314,21 @@ const StatsPage = () => {
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 
+  // Подпись процентов на donut — снаружи круга, с явным цветом (чтобы было видно)
+  const renderPieLabel = (props) => {
+    const { cx, cy, midAngle, innerRadius, outerRadius, percent, percentage } = props
+    const RADIAN = Math.PI / 180
+    const r = outerRadius + 24
+    const x = cx + r * Math.cos(-midAngle * RADIAN)
+    const y = cy + r * Math.sin(-midAngle * RADIAN)
+    const pct = percentage != null ? Number(percentage) : (percent != null ? percent * 100 : 0)
+    return (
+      <text x={x} y={y} fill="var(--text)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" style={{ fontSize: 14, fontWeight: 600 }}>
+        {`${pct.toFixed(1)}%`}
+      </text>
+    )
+  }
+
   // Преобразование данных для donut-диаграмм (как на вкладке "по дням")
   const toDonutData = (items, limit = 10) => {
     if (!items || items.length === 0) return []
@@ -346,7 +367,7 @@ const StatsPage = () => {
                   outerRadius={140}
                   paddingAngle={2}
                   dataKey="revenue"
-                  label={({ percentage }) => `${Number(percentage ?? 0).toFixed(1)}%`}
+                  label={renderPieLabel}
                   labelLine={false}
                 >
                   {donutData.map((entry, index) => (
@@ -454,7 +475,7 @@ const StatsPage = () => {
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="stats-date-input"
-                max={new Date().toISOString().split('T')[0]}
+                max={todayStr()}
               />
             </label>
           )}
@@ -501,8 +522,9 @@ const StatsPage = () => {
                         setSelectedCategoryId('')
                       }}
                       className={`view-type-btn ${productViewType === 'all' ? 'active' : ''}`}
+                      title="Данные по обеим точкам (Червенский + Валерианова)"
                     >
-                      Общий
+                      Общий (обе точки)
                     </button>
                   )}
                   <button
@@ -538,7 +560,7 @@ const StatsPage = () => {
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
                   className="stats-date-input"
-                  max={new Date().toISOString().split('T')[0]}
+                  max={todayStr()}
                 />
               </div>
 
@@ -616,7 +638,7 @@ const StatsPage = () => {
                             outerRadius={140}
                             paddingAngle={2}
                             dataKey="revenue"
-                            label={({ percentage }) => `${Number(percentage ?? 0).toFixed(1)}%`}
+                            label={renderPieLabel}
                             labelLine={false}
                           >
                             {dayTopProducts.products.map((entry, index) => (
@@ -664,30 +686,34 @@ const StatsPage = () => {
               </div>
             )}
 
-            {/* Общий график */}
+            {/* Общий график — объединённые данные по всем точкам (Червенский + Валерианова) */}
             {productViewType === 'all' && (
               <>
-                {productsStats.length > 0 ? (
+                {productsStats.length > 0 && (
                   <DonutChartSection
-                    title={`Продажи по напиткам ${getPeriodLabel()}`}
+                    title={`Продажи по напиткам ${getPeriodLabel()} (все точки)`}
                     data={productsStats.slice(0, 10)}
                   />
-                ) : (
-                  <div className="chart-section">
-                    <h3>Продажи по напиткам {getPeriodLabel()}</h3>
-                    <div className="empty-state">Нет данных для отображения</div>
-                  </div>
                 )}
 
-                {categoriesStats.length > 0 ? (
+                {categoriesStats.length > 0 && (
                   <DonutChartSection
-                    title={`Продажи по категориям товаров ${getPeriodLabel()}`}
+                    title={`Продажи по категориям товаров ${getPeriodLabel()} (все точки)`}
                     data={categoriesStats}
                   />
-                ) : (
+                )}
+
+                {productsStats.length === 0 && categoriesStats.length === 0 && !chartLoading && (
                   <div className="chart-section">
-                    <h3>Продажи по категориям товаров {getPeriodLabel()}</h3>
-                    <div className="empty-state">Нет данных для отображения</div>
+                    <div className="empty-state">
+                      <p>Нет данных за выбранный период</p>
+                      <p className="empty-state-hint">
+                        {(() => {
+                          const { dateFrom, dateTo } = getDateRange(period)
+                          return `Период: ${dateFrom} — ${dateTo}. Попробуйте «День» и сегодняшнюю дату.`
+                        })()}
+                      </p>
+                    </div>
                   </div>
                 )}
               </>

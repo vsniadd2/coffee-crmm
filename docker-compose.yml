@@ -12,7 +12,9 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Путь задаётся через POSTGRES_DATA_PATH. На сервере укажите абсолютный путь
+      # (например /var/lib/coffee-crm/postgres_data), чтобы данные не зависели от UID.
+      - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
     networks:
       - coffee_network
     healthcheck:
@@ -21,6 +23,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # При каждом старте (docker compose up / start) backend применяет миграции из backend/migrations/
   backend:
     build:
       context: ./backend
@@ -58,10 +61,6 @@ services:
       - backend
     networks:
       - coffee_network
-
-volumes:
-  postgres_data:
-    driver: local
 
 networks:
   coffee_network:

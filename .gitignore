@@ -34,3 +34,4 @@ logs/
 !backend/migrations/*.sql
 *.sqlite
 postgres_data/
+data/
