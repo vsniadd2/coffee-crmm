@@ -130,6 +130,15 @@ const OrderDetailsModal = ({ order, onClose, onMarkOperation, onStartReplacement
         <div className="order-details-card-total">
           Итого: <span className="mono">{total} BYN</span>
         </div>
+        {transaction.payment_method && (
+          <div className="order-details-card-payment">
+            Оплата: {transaction.payment_method === 'mixed'
+              ? `${parseFloat(transaction.cash_part || 0).toFixed(2)} наличными + ${parseFloat(transaction.card_part || 0).toFixed(2)} картой`
+              : transaction.payment_method === 'card'
+                ? 'Карта'
+                : 'Наличные'}
+          </div>
+        )}
       </div>
     )
   }
@@ -293,6 +302,18 @@ const OrderDetailsModal = ({ order, onClose, onMarkOperation, onStartReplacement
                 <span className="order-details-label">Итого к оплате:</span>
                 <span className="order-details-value mono order-details-total">
                   {parseFloat(order.final_amount || 0).toFixed(2)} BYN
+                </span>
+              </div>
+              <div className="order-details-item">
+                <span className="order-details-label">Оплата:</span>
+                <span className="order-details-value">
+                  {order.payment_method === 'mixed'
+                    ? `Смешанная: ${parseFloat(order.cash_part || 0).toFixed(2)} BYN наличными + ${parseFloat(order.card_part || 0).toFixed(2)} BYN картой`
+                    : order.payment_method === 'card'
+                      ? 'Карта'
+                      : order.payment_method === 'cash'
+                        ? 'Наличные'
+                        : '—'}
                 </span>
               </div>
             </div>

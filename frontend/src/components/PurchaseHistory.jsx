@@ -657,6 +657,16 @@ const PurchaseHistory = () => {
             <>
               <div className="purchases-table-wrap">
                 <table className="purchases-table">
+                  <colgroup>
+                    <col className="col-date" />
+                    <col className="col-client" />
+                    <col className="col-id" />
+                    <col className="col-amount" />
+                    <col className="col-discount" />
+                    <col className="col-total" />
+                    <col className="col-payment" />
+                    <col className="col-status" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Дата</th>
@@ -686,7 +696,13 @@ const PurchaseHistory = () => {
                         </td>
                         <td className="num mono" data-label="Итого">{formatCurrency(purchase.final_amount)}</td>
                         <td data-label="Оплата">
-                          {purchase.payment_method === 'card' ? (
+                          {purchase.payment_method === 'mixed' ? (
+                            <span className="payment-method-badge payment-method-mixed-badge">
+                              <img src="/img/money-svgrepo-com.svg" alt="Нал" className="payment-badge-icon" />
+                              <img src="/img/card-svgrepo-com.svg" alt="Карта" className="payment-badge-icon" />
+                              <span>Смешанная</span>
+                            </span>
+                          ) : purchase.payment_method === 'card' ? (
                             <span className="payment-method-badge payment-method-card-badge">
                               <img src="/img/card-svgrepo-com.svg" alt="Карта" className="payment-badge-icon" />
                               <span>Карта</span>

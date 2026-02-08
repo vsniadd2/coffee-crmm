@@ -14,7 +14,7 @@ const {
 // БД хранит время в московском (сессия SET timezone = 'Europe/Moscow', CURRENT_TIMESTAMP даёт МСК)
 // Просто форматируем сохранённое значение и добавляем +03:00
 const CREATED_AT_MSK_SQL = "to_char(t.created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
-const TRANSACTION_SELECT_MSK = `t.id, t.client_id, t.amount, t.discount, t.final_amount, ${CREATED_AT_MSK_SQL}, t.operation_type, t.replacement_of_transaction_id, t.payment_method`;
+const TRANSACTION_SELECT_MSK = `t.id, t.client_id, t.amount, t.discount, t.final_amount, ${CREATED_AT_MSK_SQL}, t.operation_type, t.replacement_of_transaction_id, t.payment_method, t.cash_part, t.card_part`;
 // Для таблицы clients (без алиаса)
 const CREATED_AT_MSK_CLIENT_SQL = "to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"+03:00\"') as created_at";
 
@@ -376,13 +376,21 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
 
     // Создание транзакции
     const paymentMethod = req.body.paymentMethod || 'cash';
+    const cashPart = paymentMethod === 'mixed' ? parseFloat(req.body.cashPart) : null;
+    const cardPart = paymentMethod === 'mixed' ? parseFloat(req.body.cardPart) : null;
+    if (paymentMethod === 'mixed') {
+      const sum = (cashPart || 0) + (cardPart || 0);
+      if (Math.abs(sum - finalAmount) > 0.01) {
+        return res.status(400).json({ error: 'Сумма наличными + картой должна равняться итогу заказа' });
+      }
+    }
     const createdByUser = req.user?.username || null;
     const pointId = await getPointIdForInsert(req);
     const transactionResult = await pool.query(`
-      INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id, cash_part, card_part)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id
-    `, [client.id, Number.parseFloat(price), discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]);
+    `, [client.id, Number.parseFloat(price), discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId, cashPart, cardPart]);
     
     const transactionId = transactionResult.rows[0].id;
     
@@ -462,11 +470,20 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
 
     // Создание транзакции
     const paymentMethod = req.body.paymentMethod || 'cash';
+    const cashPart = paymentMethod === 'mixed' ? parseFloat(req.body.cashPart) : null;
+    const cardPart = paymentMethod === 'mixed' ? parseFloat(req.body.cardPart) : null;
+    if (paymentMethod === 'mixed') {
+      const sum = (cashPart || 0) + (cardPart || 0);
+      if (Math.abs(sum - finalAmount) > 0.01) {
+        await dbClient.query('ROLLBACK');
+        return res.status(400).json({ error: 'Сумма наличными + картой должна равняться итогу заказа' });
+      }
+    }
     const createdByUser = req.user?.username || null;
     const pointId = await getPointIdForInsert(req);
     const transactionResult = await dbClient.query(
-      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-      [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
+      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id, cash_part, card_part) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
+      [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId, cashPart, cardPart]
     );
 
     const transactionId = transactionResult.rows[0].id;
@@ -528,11 +545,19 @@ app.post('/api/purchases/anonymous', verifyAccessToken, async (req, res) => {
     const finalAmount = Math.max(0, priceFloat - employeeDiscount);
 
     const paymentMethod = req.body.paymentMethod || 'cash';
+    const cashPart = paymentMethod === 'mixed' ? parseFloat(req.body.cashPart) : null;
+    const cardPart = paymentMethod === 'mixed' ? parseFloat(req.body.cardPart) : null;
+    if (paymentMethod === 'mixed') {
+      const sum = (cashPart || 0) + (cardPart || 0);
+      if (Math.abs(sum - finalAmount) > 0.01) {
+        return res.status(400).json({ error: 'Сумма наличными + картой должна равняться итогу заказа' });
+      }
+    }
     const createdByUser = req.user?.username || null;
     const pointId = await getPointIdForInsert(req);
     const transactionResult = await pool.query(
-      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId]
+      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id, cash_part, card_part) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      [priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId, cashPart, cardPart]
     );
 
     const transactionId = transactionResult.rows[0].id;
@@ -653,10 +678,13 @@ app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
 
     let query = `
       SELECT 
-        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_total,
-        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_total,
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) 
+          + COALESCE(SUM(cash_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_total,
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) 
+          + COALESCE(SUM(card_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_total,
         COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_count,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_count
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_count,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as mixed_count
       FROM transactions
     `;
 
@@ -698,9 +726,12 @@ app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
         total: parseFloat(stats.card_total || 0),
         count: parseInt(stats.card_count || 0)
       },
+      mixed: {
+        count: parseInt(stats.mixed_count || 0)
+      },
       total: {
         total: parseFloat(stats.cash_total || 0) + parseFloat(stats.card_total || 0),
-        count: parseInt(stats.cash_count || 0) + parseInt(stats.card_count || 0)
+        count: parseInt(stats.cash_count || 0) + parseInt(stats.card_count || 0) + parseInt(stats.mixed_count || 0)
       }
     });
   } catch (error) {
@@ -1146,6 +1177,8 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
         ${CREATED_AT_MSK_SQL},
         t.operation_type,
         t.payment_method,
+        t.cash_part,
+        t.card_part,
         c.first_name,
         c.last_name,
         c.middle_name,
@@ -1656,6 +1689,8 @@ app.get('/api/orders/search', verifyAccessToken, async (req, res) => {
         t.discount,
         t.final_amount,
         t.payment_method,
+        t.cash_part,
+        t.card_part,
         t.employee_discount,
         t.created_by_user,
         t.created_at,

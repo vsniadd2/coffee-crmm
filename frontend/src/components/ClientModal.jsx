@@ -57,7 +57,7 @@ const ClientModal = ({ onClose }) => {
     }
   }
 
-  const createOrderWithPayment = async (paymentMethod) => {
+  const createOrderWithPayment = async (paymentMethod, options) => {
     setLoading(true)
     setShowPaymentModal(false)
 
@@ -68,8 +68,10 @@ const ClientModal = ({ onClose }) => {
         return
       }
 
+      const mixedParts = paymentMethod === 'mixed' && options ? { cashPart: options.cashPart, cardPart: options.cardPart } : null
+
       if (orderData.type === 'existing') {
-        const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod)
+        const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod, 0, mixedParts)
         if (purchaseResult.success) {
           showNotification('Покупка успешно добавлена!', 'success')
           setTimeout(() => refreshAll(), 100)
@@ -85,7 +87,7 @@ const ClientModal = ({ onClose }) => {
           showNotification(purchaseResult.error || 'Ошибка при добавлении покупки', 'error')
         }
       } else if (orderData.type === 'new') {
-        const result = await addClient({
+        const clientData = {
           firstName: orderData.firstName,
           lastName: orderData.lastName,
           middleName: orderData.middleName,
@@ -93,7 +95,12 @@ const ClientModal = ({ onClose }) => {
           price: orderData.price,
           items: orderData.items,
           paymentMethod
-        })
+        }
+        if (mixedParts) {
+          clientData.cashPart = mixedParts.cashPart
+          clientData.cardPart = mixedParts.cardPart
+        }
+        const result = await addClient(clientData)
 
         if (result.success) {
           showNotification('Клиент успешно добавлен!', 'success')
@@ -153,7 +160,8 @@ const ClientModal = ({ onClose }) => {
                 productPrice: item.product.price,
                 quantity: item.quantity
               }))
-              setPendingOrderData({ type: 'existing', clientId: existingClient.id, price, items })
+              const finalAmount = hasDiscount ? price * 0.9 : price
+              setPendingOrderData({ type: 'existing', clientId: existingClient.id, price, items, finalAmount })
               setShowPaymentModal(true)
               return
             } else {
@@ -189,7 +197,8 @@ const ClientModal = ({ onClose }) => {
         middleName: formData.middleName,
         clientId: formData.clientId,
         price: finalPrice,
-        items
+        items,
+        finalAmount: finalPrice
       })
       setShowPaymentModal(true)
     } catch (error) {
@@ -350,8 +359,9 @@ const ClientModal = ({ onClose }) => {
         </div>
       </div>
 
-      {showPaymentModal && (
+      {showPaymentModal && pendingOrderData && (
         <PaymentMethodModal
+          totalAmount={pendingOrderData.finalAmount ?? pendingOrderData.price}
           onSelect={createOrderWithPayment}
           onClose={() => {
             setShowPaymentModal(false)

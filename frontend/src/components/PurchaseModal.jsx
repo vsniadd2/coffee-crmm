@@ -62,7 +62,7 @@ const PurchaseModal = ({ client, onClose }) => {
     }
   }
 
-  const createPurchaseWithPayment = async (paymentMethod) => {
+  const createPurchaseWithPayment = async (paymentMethod, options) => {
     setLoading(true)
     setShowPaymentModal(false)
 
@@ -73,7 +73,8 @@ const PurchaseModal = ({ client, onClose }) => {
         return
       }
 
-      const result = await addPurchase(client.id, purchaseData.price, purchaseData.items, paymentMethod)
+      const mixedParts = paymentMethod === 'mixed' && options ? { cashPart: options.cashPart, cardPart: options.cardPart } : null
+      const result = await addPurchase(client.id, purchaseData.price, purchaseData.items, paymentMethod, 0, mixedParts)
       if (result.success) {
         showNotification('Покупка успешно добавлена!', 'success')
         setTimeout(() => refreshAll(), 100)
@@ -100,6 +101,8 @@ const PurchaseModal = ({ client, onClose }) => {
       return
     }
 
+    const finalAmount = discountInfo ? discountInfo.finalPrice : p
+
     // Подготавливаем товары для отправки
     const items = Object.values(selectedProducts).map(item => ({
       productId: item.product.id,
@@ -107,8 +110,7 @@ const PurchaseModal = ({ client, onClose }) => {
       productPrice: item.product.price,
       quantity: item.quantity
     }))
-    
-    setPendingPurchaseData({ price: p, items })
+    setPendingPurchaseData({ price: p, items, finalAmount })
     setShowPaymentModal(true)
   }
 
@@ -206,8 +208,9 @@ const PurchaseModal = ({ client, onClose }) => {
         </div>
       </div>
 
-      {showPaymentModal && (
+      {showPaymentModal && pendingPurchaseData && (
         <PaymentMethodModal
+          totalAmount={pendingPurchaseData.finalAmount ?? pendingPurchaseData.price}
           onSelect={createPurchaseWithPayment}
           onClose={() => {
             setShowPaymentModal(false)

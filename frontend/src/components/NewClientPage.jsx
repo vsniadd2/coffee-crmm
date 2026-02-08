@@ -262,7 +262,7 @@ const NewClientPage = () => {
     }
   }, [formData.price, productsTotal, checkedClient, recalculateDiscount])
 
-  const createOrderWithPayment = async (paymentMethod) => {
+  const createOrderWithPayment = async (paymentMethod, options) => {
     setLoading(true)
     setShowPaymentModal(false)
 
@@ -273,9 +273,11 @@ const NewClientPage = () => {
         return
       }
 
+      const mixedParts = paymentMethod === 'mixed' && options ? { cashPart: options.cashPart, cardPart: options.cardPart } : null
+
       if (orderData.type === 'anonymous') {
         try {
-          await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+          await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0, mixedParts)
           showNotification('Заказ создан!', 'success')
           refreshAll()
           setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
@@ -290,7 +292,7 @@ const NewClientPage = () => {
             const refreshed = await refreshAccessToken()
             if (refreshed) {
               try {
-                await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+                await clientService.createAnonymousPurchase(orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0, mixedParts)
                 showNotification('Заказ создан!', 'success')
                 refreshAll()
                 setFormData({ firstName: '', lastName: '', middleName: '', clientId: '', price: '' })
@@ -312,7 +314,7 @@ const NewClientPage = () => {
         }
       } else if (orderData.type === 'existing') {
         try {
-          const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0)
+          const purchaseResult = await addPurchase(orderData.clientId, orderData.price, orderData.items, paymentMethod, orderData.employeeDiscount || 0, mixedParts)
           if (purchaseResult.success) {
             showNotification('Покупка успешно добавлена!', 'success')
             setTimeout(() => refreshAll(), 100)
@@ -334,7 +336,7 @@ const NewClientPage = () => {
           showNotification(purchaseError.message || 'Ошибка при добавлении покупки', 'error')
         }
       } else if (orderData.type === 'new') {
-        const result = await addClient({
+        const clientData = {
           firstName: orderData.firstName,
           lastName: orderData.lastName,
           middleName: orderData.middleName,
@@ -343,7 +345,12 @@ const NewClientPage = () => {
           items: orderData.items,
           paymentMethod,
           employeeDiscount: orderData.employeeDiscount || 0
-        })
+        }
+        if (mixedParts) {
+          clientData.cashPart = mixedParts.cashPart
+          clientData.cardPart = mixedParts.cardPart
+        }
+        const result = await addClient(clientData)
 
         if (result.success) {
           showNotification('Клиент успешно добавлен!', 'success')
@@ -411,7 +418,8 @@ const NewClientPage = () => {
           productPrice: item.product.price,
           quantity: item.quantity
         }))
-        setPendingOrderData({ type: 'anonymous', price, items, employeeDiscount: employeeDiscountAmount })
+        const finalAmount = Math.max(0, price - employeeDiscountAmount)
+        setPendingOrderData({ type: 'anonymous', price, items, employeeDiscount: employeeDiscountAmount, finalAmount })
         setShowPaymentModal(true)
         return
       }
@@ -448,12 +456,14 @@ const NewClientPage = () => {
                 productPrice: item.product.price,
                 quantity: item.quantity
               }))
+              const finalAmount = Math.max(0, (hasDiscount ? price * 0.9 : price) - employeeDiscountAmount)
               setPendingOrderData({ 
                 type: 'existing', 
                 clientId: existingClient.id, 
                 price, 
                 items,
-                employeeDiscount: employeeDiscountAmount
+                employeeDiscount: employeeDiscountAmount,
+                finalAmount
               })
               setShowPaymentModal(true)
               return
@@ -483,6 +493,7 @@ const NewClientPage = () => {
         quantity: item.quantity
       }))
       
+      const finalAmount = Math.max(0, finalPrice - employeeDiscountAmount)
       setPendingOrderData({
         type: 'new',
         firstName: formData.firstName,
@@ -491,7 +502,8 @@ const NewClientPage = () => {
         clientId: formData.clientId,
         price: finalPrice,
         items,
-        employeeDiscount: employeeDiscountAmount
+        employeeDiscount: employeeDiscountAmount,
+        finalAmount
       })
       setShowPaymentModal(true)
     } catch (error) {
@@ -749,8 +761,9 @@ const NewClientPage = () => {
         </div>
       </div>
 
-      {showPaymentModal && (
+      {showPaymentModal && pendingOrderData && (
         <PaymentMethodModal
+          totalAmount={pendingOrderData.finalAmount ?? pendingOrderData.price}
           onSelect={createOrderWithPayment}
           onClose={() => {
             setShowPaymentModal(false)

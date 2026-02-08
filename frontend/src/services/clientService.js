@@ -73,11 +73,16 @@ export const clientService = {
     return response.json()
   },
 
-  async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0) {
+  async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null) {
+    const body = { price, items, paymentMethod, employeeDiscount }
+    if (paymentMethod === 'mixed' && mixedParts) {
+      body.cashPart = mixedParts.cashPart
+      body.cardPart = mixedParts.cardPart
+    }
     const response = await fetch(`${API_URL}/clients/${clientDbId}/purchase`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ price, items, paymentMethod, employeeDiscount })
+      body: JSON.stringify(body)
     })
 
     if (response.status === 403) {
@@ -92,11 +97,16 @@ export const clientService = {
     return response.json()
   },
 
-  async createAnonymousPurchase(price, items = [], paymentMethod = 'cash', employeeDiscount = 0) {
+  async createAnonymousPurchase(price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null) {
+    const body = { price, items, paymentMethod, employeeDiscount }
+    if (paymentMethod === 'mixed' && mixedParts) {
+      body.cashPart = mixedParts.cashPart
+      body.cardPart = mixedParts.cardPart
+    }
     const response = await fetch(`${API_URL}/purchases/anonymous`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ price, items, paymentMethod, employeeDiscount })
+      body: JSON.stringify(body)
     })
 
     if (response.status === 403) {
@@ -112,19 +122,24 @@ export const clientService = {
   },
 
   async create(clientData) {
+    const body = {
+      firstName: clientData.firstName,
+      lastName: clientData.lastName,
+      middleName: clientData.middleName,
+      clientId: clientData.clientId,
+      price: clientData.price,
+      items: clientData.items || [],
+      paymentMethod: clientData.paymentMethod || 'cash',
+      employeeDiscount: clientData.employeeDiscount || 0
+    }
+    if (body.paymentMethod === 'mixed' && clientData.cashPart != null && clientData.cardPart != null) {
+      body.cashPart = clientData.cashPart
+      body.cardPart = clientData.cardPart
+    }
     const response = await fetch(`${API_URL}/clients`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({
-        firstName: clientData.firstName,
-        lastName: clientData.lastName,
-        middleName: clientData.middleName,
-        clientId: clientData.clientId,
-        price: clientData.price,
-        items: clientData.items || [],
-        paymentMethod: clientData.paymentMethod || 'cash',
-        employeeDiscount: clientData.employeeDiscount || 0
-      })
+      body: JSON.stringify(body)
     })
 
     if (response.status === 403) {

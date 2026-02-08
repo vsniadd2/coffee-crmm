@@ -266,6 +266,12 @@
     table-layout: fixed;
 }
 
+/* Минимальные ширины колонок — предотвращают наложение Оплата/Статус */
+.purchases-table .col-payment { width: 12%; }
+.purchases-table .col-status { width: 9%; }
+.purchases-table thead th:nth-child(7) { min-width: 105px; }
+.purchases-table thead th:nth-child(8) { min-width: 55px; }
+
 .purchases-table thead th {
     text-align: left;
     background: #f3f6fb;
@@ -299,6 +305,7 @@
     color: #111827;
     vertical-align: middle;
     text-align: left;
+    overflow: hidden;
 }
 
 .purchases-table tbody td:nth-child(1),
@@ -417,6 +424,9 @@
     font-weight: 700;
     border: 1px solid transparent;
     justify-content: center;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .payment-badge-icon {
@@ -445,6 +455,16 @@
 
 .payment-method-card-badge .payment-badge-icon {
     filter: brightness(0) saturate(100%) invert(25%) sepia(95%) saturate(2000%) hue-rotate(220deg) brightness(0.6);
+}
+
+.payment-method-mixed-badge {
+    background: rgba(139, 92, 246, 0.12);
+    color: #6d28d9;
+    border-color: rgba(139, 92, 246, 0.35);
+}
+
+.payment-method-mixed-badge .payment-badge-icon {
+    filter: brightness(0) saturate(100%) invert(35%) sepia(70%) saturate(500%) hue-rotate(260deg) brightness(0.7);
 }
 
 .purchase-history-loading,

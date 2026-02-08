@@ -179,7 +179,11 @@ const OrderSearchPage = () => {
                       Итого: {parseFloat(order.final_amount).toFixed(2)} BYN
                     </div>
                     <div className="order-search-result-payment">
-                      Оплата: {order.payment_method === 'card' ? 'Карта' : 'Наличные'}
+                      Оплата: {order.payment_method === 'mixed'
+                        ? `Смешанная (${parseFloat(order.cash_part || 0).toFixed(2)} наличными + ${parseFloat(order.card_part || 0).toFixed(2)} картой)`
+                        : order.payment_method === 'card'
+                          ? 'Карта'
+                          : 'Наличные'}
                     </div>
                   </div>
                 </div>

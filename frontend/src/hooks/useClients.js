@@ -99,9 +99,9 @@ export const useClients = ({ page = 1, limit = 20, search = '' } = {}) => {
     }
   }
 
-  const addPurchase = async (clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0) => {
+  const addPurchase = async (clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null) => {
     try {
-      const result = await clientService.addPurchase(clientDbId, price, items, paymentMethod, employeeDiscount)
+      const result = await clientService.addPurchase(clientDbId, price, items, paymentMethod, employeeDiscount, mixedParts)
       await loadClients(page, limit, search)
       return { success: true, result }
     } catch (err) {
@@ -109,7 +109,7 @@ export const useClients = ({ page = 1, limit = 20, search = '' } = {}) => {
         const refreshed = await refreshAccessToken()
         if (refreshed) {
           try {
-            const result = await clientService.addPurchase(clientDbId, price, items, paymentMethod, employeeDiscount)
+            const result = await clientService.addPurchase(clientDbId, price, items, paymentMethod, employeeDiscount, mixedParts)
             await loadClients(page, limit, search)
             return { success: true, result }
           } catch (retryErr) {
