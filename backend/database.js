@@ -50,7 +50,26 @@ const runMigrations = async (client) => {
 
 // Инициализация: только миграции из папки migrations/ + создание начальных пользователей при пустой БД
 const initDatabase = async () => {
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (connectErr) {
+    const isRefused = connectErr.code === 'ECONNREFUSED' || (connectErr.errors && connectErr.errors.some(e => e.code === 'ECONNREFUSED'));
+    if (isRefused) {
+      const host = dbConfig.host;
+      const port = dbConfig.port;
+      console.error('');
+      console.error('❌ Не удалось подключиться к PostgreSQL по адресу ' + host + ':' + port + '.');
+      console.error('   Убедитесь, что база данных запущена.');
+      console.error('');
+      console.error('   Варианты запуска БД:');
+      console.error('   1) Из корня проекта:  docker compose up -d postgres');
+      console.error('      затем запустите бэкенд:  cd backend && npm start');
+      console.error('   2) Или запустите всё:  docker compose up');
+      console.error('');
+    }
+    throw connectErr;
+  }
   try {
     await runMigrations(client);
     console.log('✅ Миграции проверены, структура БД актуальна');

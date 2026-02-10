@@ -18,6 +18,8 @@ const OrderDetailsPage = () => {
   const [paymentStats, setPaymentStats] = useState(null)
   const [productsStats, setProductsStats] = useState([])
   const [categoriesStats, setCategoriesStats] = useState([])
+  const [totalWithoutDiscountProducts, setTotalWithoutDiscountProducts] = useState(null)
+  const [totalWithoutDiscountCategories, setTotalWithoutDiscountCategories] = useState(null)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
@@ -33,6 +35,8 @@ const OrderDetailsPage = () => {
         setPaymentStats(paymentData)
         setProductsStats(productsData.products || [])
         setCategoriesStats(categoriesData.categories || [])
+        setTotalWithoutDiscountProducts(productsData.totalWithoutDiscount ?? null)
+        setTotalWithoutDiscountCategories(categoriesData.totalWithoutDiscount ?? null)
       } catch (e) {
         if (e?.message === 'UNAUTHORIZED') {
           const refreshed = await refreshAccessToken()
@@ -100,7 +104,7 @@ const OrderDetailsPage = () => {
     }))
   }
 
-  const DonutChartSection = ({ title, dateLabel, data }) => {
+  const DonutChartSection = ({ title, dateLabel, data, totalWithoutDiscount }) => {
     const donutData = toDonutData(data)
     const totalSum = donutData.reduce((s, i) => s + (i.revenue || 0), 0)
     if (donutData.length === 0) return null
@@ -110,7 +114,10 @@ const OrderDetailsPage = () => {
           <h3>{title}</h3>
           <div className="day-info">
             {dateLabel && <span className="day-date">{dateLabel}</span>}
-            <span className="day-total">Всего: {totalSum.toFixed(2)} BYN</span>
+            <span className="day-total">Всего (с учетом скидок): {totalSum.toFixed(2)} BYN</span>
+            {totalWithoutDiscount != null && totalWithoutDiscount > 0 && (
+              <span className="day-total-without">Без учета скидок: {Number(totalWithoutDiscount).toFixed(2)} BYN</span>
+            )}
           </div>
         </div>
         <div className="day-top-products-content">
@@ -164,6 +171,9 @@ const OrderDetailsPage = () => {
                   <div className="legend-percentage">{product.percentage}%</div>
                   <div className="legend-name">{product.name}</div>
                   <div className="legend-revenue">{Number(product.revenue).toFixed(2)} BYN</div>
+                  <div className="legend-quantity">
+                    {product.quantity != null ? `${product.quantity} шт` : product.count != null ? `${product.count} продаж` : product.orderCount != null ? `${product.orderCount} заказов` : '—'}
+                  </div>
                 </div>
               </div>
             ))}
@@ -175,8 +185,11 @@ const OrderDetailsPage = () => {
 
   // Данные для графика способов оплаты (формат как для donut)
   const paymentChartData = paymentStats ? [
-    { name: 'Наличные', revenue: paymentStats.cash.total, count: paymentStats.cash.count },
-    { name: 'Карта', revenue: paymentStats.card.total, count: paymentStats.card.count }
+    { name: 'Наличные', revenue: paymentStats.cash?.total || 0, count: paymentStats.cash?.count || 0 },
+    { name: 'Карта', revenue: paymentStats.card?.total || 0, count: paymentStats.card?.count || 0 },
+    ...(paymentStats.mixed && (paymentStats.mixed.total > 0 || paymentStats.mixed.count > 0)
+      ? [{ name: 'Смешанная', revenue: paymentStats.mixed.total || 0, count: paymentStats.mixed.count || 0 }]
+      : [])
   ] : []
 
   if (loading) {
@@ -256,7 +269,7 @@ const OrderDetailsPage = () => {
 
         {/* График продаж по товарам (напитки) */}
         {productsStats.length > 0 ? (
-          <DonutChartSection title="Продажи по напиткам" dateLabel={dateLabel} data={productsStats.slice(0, 10)} />
+          <DonutChartSection title="Продажи по напиткам" dateLabel={dateLabel} data={productsStats.slice(0, 10)} totalWithoutDiscount={totalWithoutDiscountProducts} />
         ) : (
           <div className="chart-section">
             <h3>Продажи по напиткам</h3>
@@ -266,7 +279,7 @@ const OrderDetailsPage = () => {
 
         {/* График продаж по категориям */}
         {categoriesStats.length > 0 ? (
-          <DonutChartSection title="Продажи по категориям товаров" dateLabel={dateLabel} data={categoriesStats} />
+          <DonutChartSection title="Продажи по категориям товаров" dateLabel={dateLabel} data={categoriesStats} totalWithoutDiscount={totalWithoutDiscountCategories} />
         ) : (
           <div className="chart-section">
             <h3>Продажи по категориям товаров</h3>

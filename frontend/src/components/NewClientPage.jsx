@@ -164,12 +164,14 @@ const NewClientPage = () => {
 
   // Автозаполнение формы при выборе клиента
   const handleSelectClient = async (client) => {
+    const rawId = (client.client_id || '').trim()
+    const cleanId = rawId ? rawId.split(/\s*\|\|/)[0].trim() : ''
     const newPrice = productsTotal > 0 ? productsTotal.toFixed(2) : formData.price
     setFormData({
       firstName: client.first_name || '',
       lastName: client.last_name || '',
       middleName: normalizeMiddleNameForDisplay(client.middle_name) || '',
-      clientId: client.client_id || '',
+      clientId: cleanId,
       price: newPrice
     })
     setCheckedClient(client)
@@ -386,7 +388,7 @@ const NewClientPage = () => {
       const firstName = (formData.firstName || '').trim()
       const lastName = (formData.lastName || '').trim()
       const middleName = (formData.middleName || '').trim()
-      const clientId = (formData.clientId || '').trim()
+      const clientId = (formData.clientId || '').trim().split(/\s*\|\|/)[0].trim()
       const isAnonymous = !firstName && !lastName && !middleName && !clientId
 
       // Для неанонимного заказа проверяем обязательные поля: Имя, Фамилия, ID
@@ -494,12 +496,13 @@ const NewClientPage = () => {
       }))
       
       const finalAmount = Math.max(0, finalPrice - employeeDiscountAmount)
+      const cleanClientId = (formData.clientId || '').trim().split(/\s*\|\|/)[0].trim()
       setPendingOrderData({
         type: 'new',
         firstName: formData.firstName,
         lastName: formData.lastName,
         middleName: formData.middleName,
-        clientId: formData.clientId,
+        clientId: cleanClientId,
         price: finalPrice,
         items,
         employeeDiscount: employeeDiscountAmount,

@@ -1,6 +1,6 @@
 .header {
     background: var(--card);
-    padding: calc(20px + env(safe-area-inset-top, 0)) 40px 20px;
+    padding: calc(20px + env(safe-area-inset-top, 0)) calc(40px + env(safe-area-inset-right, 0)) 20px calc(40px + env(safe-area-inset-left, 0));
     box-shadow: var(--shadow-sm);
     display: flex;
     justify-content: space-between;
@@ -340,7 +340,7 @@
 /* Планшеты (1024px и меньше) */
 @media (max-width: 1024px) {
     .header {
-        padding: calc(16px + env(safe-area-inset-top, 0)) 24px 16px;
+        padding: calc(16px + env(safe-area-inset-top, 0)) calc(24px + env(safe-area-inset-right, 0)) 16px calc(24px + env(safe-area-inset-left, 0));
     }
 
     .logo h1 {
@@ -492,13 +492,21 @@
     padding-top: 12px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
+}
+
+.mobile-nav-point-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 4px 0;
 }
 
 .mobile-nav-point-btn {
     width: 100%;
     text-align: left;
     padding: 14px 20px;
+    min-height: 48px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-soft);
     font-size: 1rem;
@@ -518,7 +526,8 @@
 .mobile-nav-logout {
     margin-top: 0;
     color: #dc2626;
-    border: none;
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    min-height: 48px;
 }
 
 .mobile-nav-logout:hover {
@@ -563,7 +572,7 @@
     .header {
         flex-direction: row;
         gap: 12px;
-        padding: calc(16px + env(safe-area-inset-top, 0)) 20px 16px;
+        padding: calc(16px + env(safe-area-inset-top, 0)) calc(20px + env(safe-area-inset-right, 0)) 16px calc(20px + env(safe-area-inset-left, 0));
         text-align: left;
     }
 
@@ -597,7 +606,7 @@
 /* Мобильные устройства (480px и меньше) */
 @media (max-width: 480px) {
     .header {
-        padding: calc(12px + env(safe-area-inset-top, 0)) 16px 12px;
+        padding: calc(12px + env(safe-area-inset-top, 0)) calc(16px + env(safe-area-inset-right, 0)) 12px calc(16px + env(safe-area-inset-left, 0));
         gap: 12px;
     }
 

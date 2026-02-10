@@ -53,7 +53,10 @@ export const clientService = {
   },
 
   async getById(clientId) {
-    const encodedClientId = encodeURIComponent(clientId)
+    if (!clientId || typeof clientId !== 'string') return null
+    const sanitized = clientId.trim().split(/\s*\|\|/)[0].trim()
+    if (!sanitized) return null
+    const encodedClientId = encodeURIComponent(sanitized)
     const response = await fetch(`${API_URL}/clients/${encodedClientId}`, {
       headers: getAuthHeaders()
     })
@@ -62,15 +65,12 @@ export const clientService = {
       throw new Error('UNAUTHORIZED')
     }
 
-    if (response.status === 404) {
-      return null
-    }
-
     if (!response.ok) {
       throw new Error('Ошибка получения клиента')
     }
 
-    return response.json()
+    const data = await response.json()
+    return data === null ? null : data
   },
 
   async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null) {

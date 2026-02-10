@@ -1,7 +1,9 @@
 .stats-page {
   padding: 40px;
   max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
+  min-width: 0;
 }
 
 .stats-header {
@@ -21,7 +23,28 @@
 
 .period-filters {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.period-buttons-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-date-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-date-inline .stats-date-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .period-btn {
@@ -265,10 +288,16 @@
   .donut-chart-container {
     max-width: 100%;
     min-width: 0;
+    order: 2;
   }
 
   .day-top-products-legend {
     width: 100%;
+    order: 1;
+    padding: 16px;
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-soft);
   }
 }
 
@@ -357,6 +386,11 @@
 
   .day-total {
     font-size: 0.9rem;
+  }
+
+  .day-total-without {
+    font-size: 0.85rem;
+    color: var(--muted);
   }
 
   .legend-item {
@@ -661,6 +695,12 @@
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.legend-quantity {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 2px;
 }
 
 @media (max-width: 768px) {

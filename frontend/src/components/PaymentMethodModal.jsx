@@ -111,7 +111,20 @@ const PaymentMethodModal = ({ onSelect, onClose, totalAmount = 0 }) => {
                 min="0"
                 max={total}
                 value={cashPart}
-                onChange={(e) => { setCashPart(e.target.value); setMixedError('') }}
+                onChange={(e) => {
+                  setMixedError('')
+                  const next = e.target.value
+                  if (next === '' || next === '-') {
+                    setCashPart(next)
+                    return
+                  }
+                  const num = parseFloat(next)
+                  if (!Number.isNaN(num) && num > total) {
+                    setCashPart(total === Math.floor(total) ? String(total) : total.toFixed(2))
+                  } else {
+                    setCashPart(next)
+                  }
+                }}
                 placeholder="0.00"
                 autoFocus
               />

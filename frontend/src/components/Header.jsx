@@ -185,19 +185,14 @@ const Header = ({ onAddClient, onSelectClient, currentPage, onNavigate }) => {
           )}
           {pointLabel && (
             <div className="mobile-nav-point">
+              <span className="mobile-nav-point-label">{pointLabel}</span>
               <button
                 type="button"
-                className="mobile-nav-point-btn"
-                onClick={() => setPointMenuOpen((v) => !v)}
-                aria-expanded={pointMenuOpen}
+                className="mobile-nav-link mobile-nav-logout"
+                onClick={handleLogout}
               >
-                {pointLabel}
+                Выйти
               </button>
-              {pointMenuOpen && (
-                <button type="button" className="mobile-nav-link mobile-nav-logout" onClick={handleLogout}>
-                  Выйти
-                </button>
-              )}
             </div>
           )}
         </div>

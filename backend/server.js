@@ -306,7 +306,7 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
     const rawFirstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim() : '';
     const rawLastName = typeof req.body.lastName === 'string' ? req.body.lastName.trim() : '';
     const rawMiddleName = typeof req.body.middleName === 'string' ? req.body.middleName.trim() : '';
-    const rawClientId = typeof req.body.clientId === 'string' ? req.body.clientId.trim() : '';
+    const rawClientId = typeof req.body.clientId === 'string' ? req.body.clientId.trim().split(/\s*\|\|/)[0].trim() : '';
 
     const firstName = rawFirstName || 'Без имени';
     const lastName = rawLastName || 'Без фамилии';
@@ -651,15 +651,20 @@ app.delete('/api/admin/clients/:id', verifyAccessToken, requireAdmin, async (req
 // Маршрут для получения информации о клиенте (по client_id, не по id)
 app.get('/api/clients/:clientId', verifyAccessToken, async (req, res) => {
   try {
-    const { clientId } = req.params;
+    let { clientId } = req.params;
+    clientId = (clientId || '').trim().split(/\s*\|\|/)[0].trim();
+    if (!clientId) {
+      return res.status(200).json(null);
+    }
+    const normalizedId = clientId.replace(/^\+/, ''); // убираем ведущий + для поиска
 
     const result = await pool.query(
-      `SELECT id, first_name, last_name, middle_name, client_id, status, total_spent, ${CREATED_AT_MSK_CLIENT_SQL}, updated_at FROM clients WHERE client_id = $1`,
-      [clientId]
+      `SELECT id, first_name, last_name, middle_name, client_id, status, total_spent, ${CREATED_AT_MSK_CLIENT_SQL}, updated_at FROM clients WHERE client_id = $1 OR client_id = $2`,
+      [clientId, normalizedId]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Клиент не найден' });
+      return res.status(200).json(null);
     }
 
     res.json(result.rows[0]);
@@ -682,9 +687,10 @@ app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
           + COALESCE(SUM(cash_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_total,
         COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) 
           + COALESCE(SUM(card_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_total,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_count,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_count,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as mixed_count
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0)
+          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return' AND COALESCE(cash_part, 0) >= COALESCE(card_part, 0)), 0) as cash_count,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0)
+          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return' AND COALESCE(card_part, 0) > COALESCE(cash_part, 0)), 0) as card_count
       FROM transactions
     `;
 
@@ -717,21 +723,20 @@ app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
     const result = await pool.query(query, params);
     const stats = result.rows[0];
 
+    const cashCount = parseInt(stats.cash_count || 0);
+    const cardCount = parseInt(stats.card_count || 0);
     res.json({
       cash: {
         total: parseFloat(stats.cash_total || 0),
-        count: parseInt(stats.cash_count || 0)
+        count: cashCount
       },
       card: {
         total: parseFloat(stats.card_total || 0),
-        count: parseInt(stats.card_count || 0)
-      },
-      mixed: {
-        count: parseInt(stats.mixed_count || 0)
+        count: cardCount
       },
       total: {
         total: parseFloat(stats.cash_total || 0) + parseFloat(stats.card_total || 0),
-        count: parseInt(stats.cash_count || 0) + parseInt(stats.card_count || 0) + parseInt(stats.mixed_count || 0)
+        count: cashCount + cardCount
       }
     });
   } catch (error) {
@@ -751,7 +756,8 @@ app.get('/api/orders/stats/products', verifyAccessToken, async (req, res) => {
       SELECT 
         ti.product_name,
         SUM(ti.quantity) as total_quantity,
-        SUM(ti.product_price * ti.quantity) as total_revenue,
+        SUM((ti.product_price * ti.quantity) * COALESCE(t.final_amount / NULLIF(t.amount, 0), 1)) as total_revenue,
+        SUM(ti.product_price * ti.quantity) as total_without_discount,
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
@@ -802,14 +808,16 @@ app.get('/api/orders/stats/products', verifyAccessToken, async (req, res) => {
     `;
 
     const result = await pool.query(query, params);
-    
+    const totalWithoutDiscount = result.rows.reduce((s, r) => s + parseFloat(r.total_without_discount || 0), 0);
+
     res.json({
       products: result.rows.map(row => ({
         name: row.product_name,
         quantity: parseInt(row.total_quantity || 0),
         revenue: parseFloat(row.total_revenue || 0),
         orderCount: parseInt(row.order_count || 0)
-      }))
+      })),
+      totalWithoutDiscount
     });
   } catch (error) {
     console.error('Ошибка получения статистики по товарам:', error);
@@ -830,7 +838,8 @@ app.get('/api/orders/stats/categories', verifyAccessToken, async (req, res) => {
         pc.id as category_id,
         pc.name as category_name,
         SUM(ti.quantity) as total_quantity,
-        SUM(ti.product_price * ti.quantity) as total_revenue,
+        SUM((ti.product_price * ti.quantity) * COALESCE(t.final_amount / NULLIF(t.amount, 0), 1)) as total_revenue,
+        SUM(ti.product_price * ti.quantity) as total_without_discount,
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
@@ -884,7 +893,8 @@ app.get('/api/orders/stats/categories', verifyAccessToken, async (req, res) => {
     `;
 
     const result = await pool.query(query, params);
-    
+    const totalWithoutDiscount = result.rows.reduce((s, r) => s + parseFloat(r.total_without_discount || 0), 0);
+
     res.json({
       categories: result.rows.map(row => ({
         id: row.category_id,
@@ -892,7 +902,8 @@ app.get('/api/orders/stats/categories', verifyAccessToken, async (req, res) => {
         quantity: parseInt(row.total_quantity || 0),
         revenue: parseFloat(row.total_revenue || 0),
         orderCount: parseInt(row.order_count || 0)
-      }))
+      })),
+      totalWithoutDiscount
     });
   } catch (error) {
     console.error('Ошибка получения статистики по категориям:', error);
@@ -918,7 +929,7 @@ app.get('/api/orders/stats/product', verifyAccessToken, async (req, res) => {
         ti.product_name,
         ti.product_id,
         SUM(ti.quantity) as total_quantity,
-        SUM(ti.product_price * ti.quantity) as total_revenue,
+        SUM((ti.product_price * ti.quantity) * COALESCE(t.final_amount / NULLIF(t.amount, 0), 1)) as total_revenue,
         COUNT(DISTINCT ti.transaction_id) as order_count,
         DATE(t.created_at) as sale_date
       FROM transaction_items ti
@@ -1010,7 +1021,7 @@ app.get('/api/orders/stats/day-top-products', verifyAccessToken, async (req, res
         ti.product_name,
         ti.product_id,
         SUM(ti.quantity) as total_quantity,
-        SUM(ti.product_price * ti.quantity) as total_revenue,
+        SUM((ti.product_price * ti.quantity) * COALESCE(t.final_amount / NULLIF(t.amount, 0), 1)) as total_revenue,
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
@@ -1097,7 +1108,7 @@ app.get('/api/orders/stats/category-products', verifyAccessToken, async (req, re
         ti.product_name,
         ti.product_id,
         SUM(ti.quantity) as total_quantity,
-        SUM(ti.product_price * ti.quantity) as total_revenue,
+        SUM((ti.product_price * ti.quantity) * COALESCE(t.final_amount / NULLIF(t.amount, 0), 1)) as total_revenue,
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
@@ -1140,7 +1151,7 @@ app.get('/api/orders/stats/category-products', verifyAccessToken, async (req, re
     `;
 
     const result = await pool.query(query, params);
-    
+
     res.json({
       products: result.rows.map(row => ({
         name: row.product_name,
@@ -1174,6 +1185,7 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
         t.amount,
         t.discount,
         t.final_amount,
+        t.employee_discount,
         ${CREATED_AT_MSK_SQL},
         t.operation_type,
         t.payment_method,
@@ -1217,9 +1229,18 @@ app.get('/api/purchases', verifyAccessToken, async (req, res) => {
         (c.first_name ILIKE $${paramIndex} OR
         c.last_name ILIKE $${paramIndex} OR
         c.middle_name ILIKE $${paramIndex} OR
+        c.client_id::text ILIKE $${paramIndex} OR
         CONCAT(COALESCE(c.first_name,''), ' ', COALESCE(c.last_name,'')) ILIKE $${paramIndex} OR
         CONCAT(COALESCE(c.last_name,''), ' ', COALESCE(c.first_name,'')) ILIKE $${paramIndex})
         ${isAnonSearch ? ' OR t.client_id IS NULL' : ''}
+        OR EXISTS (
+          SELECT 1 FROM transaction_items ti2
+          LEFT JOIN products p ON (CASE WHEN ti2.product_id ~ '^[0-9]+$' THEN CAST(ti2.product_id AS INTEGER) = p.id ELSE false END)
+          LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
+          LEFT JOIN product_categories pc ON ps.category_id = pc.id
+          WHERE ti2.transaction_id = t.id
+          AND (ti2.product_name ILIKE $${paramIndex} OR pc.name ILIKE $${paramIndex})
+        )
       )`);
       params.push(searchPattern);
       paramIndex++;

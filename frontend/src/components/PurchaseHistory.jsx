@@ -9,10 +9,11 @@ import ReplacementOrderModal from './ReplacementOrderModal'
 import ConfirmDialog from './ConfirmDialog'
 import { useNotification } from './NotificationProvider'
 import { normalizeMiddleNameForDisplay } from '../utils/clientDisplay'
+import { usePurchaseHistorySearch, PurchaseHistorySearchInput } from './PurchaseHistorySearch'
 import './PurchaseHistory.css'
 
 const PurchaseHistory = () => {
-  const { refreshAccessToken, user } = useAuth()
+  const { refreshAccessToken, ensureValidToken, user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const { refreshKey, registerRefreshCallback } = useDataRefresh()
   const { showNotification } = useNotification()
@@ -35,20 +36,6 @@ const PurchaseHistory = () => {
       return ''
     }
   })
-  const [searchName, setSearchName] = useState(() => {
-    try {
-      return localStorage.getItem('purchaseHistory_searchName') || ''
-    } catch {
-      return ''
-    }
-  })
-  const [debouncedSearchName, setDebouncedSearchName] = useState(() => {
-    try {
-      return localStorage.getItem('purchaseHistory_searchName') || ''
-    } catch {
-      return ''
-    }
-  })
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedPurchase, setSelectedPurchase] = useState(null)
   const [replacementOrder, setReplacementOrder] = useState(null)
@@ -61,14 +48,16 @@ const PurchaseHistory = () => {
   const [loadingStats, setLoadingStats] = useState(false)
   const [points, setPoints] = useState([])
   const [selectedPointId, setSelectedPointId] = useState('')
-  const debounceTimerRef = useRef(null)
   const isInitialLoad = useRef(true)
   const tableScrollRef = useRef(null)
   const savedScrollPositionRef = useRef(0)
-  const searchInputRef = useRef(null)
-  const wasFocusedRef = useRef(false)
-  const cursorPositionRef = useRef(null)
-  const isUserTypingRef = useRef(false)
+  const restoreFocusRef = useRef(null)
+
+  const search = usePurchaseHistorySearch({
+    onDebouncedChange: () => setPage(1),
+    isInitialLoadRef: isInitialLoad
+  })
+  restoreFocusRef.current = search.restoreFocusIfNeeded
 
   // Сохраняем фильтры в localStorage
   useEffect(() => {
@@ -95,47 +84,8 @@ const PurchaseHistory = () => {
     }
   }, [dateTo])
 
-  useEffect(() => {
-    try {
-      if (searchName) {
-        localStorage.setItem('purchaseHistory_searchName', searchName)
-      } else {
-        localStorage.removeItem('purchaseHistory_searchName')
-      }
-    } catch (e) {
-      // Игнорируем ошибки localStorage
-    }
-  }, [searchName])
-
-  // Debounce для текстового поля поиска
-  useEffect(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current)
-    }
-
-    // Сохраняем фокус и позицию курсора только если пользователь активно печатает
-    if (searchInputRef.current && document.activeElement === searchInputRef.current) {
-      wasFocusedRef.current = true
-      cursorPositionRef.current = searchInputRef.current.selectionStart
-      isUserTypingRef.current = true
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      setDebouncedSearchName(searchName)
-      if (!isInitialLoad.current) {
-        setPage(1)
-      }
-      isUserTypingRef.current = false
-    }, 500)
-
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current)
-      }
-    }
-  }, [searchName])
-
   const loadPurchases = useCallback(async (silent = false) => {
+    await ensureValidToken()
     try {
       // Показываем loading только при первой загрузке и не в silent режиме
       if (!silent) {
@@ -153,7 +103,7 @@ const PurchaseHistory = () => {
           limit: 20,
           dateFrom: dateFrom || null,
           dateTo: dateTo || null,
-          searchName: debouncedSearchName || null,
+          searchName: search.debouncedValue || null,
           pointId: pointIdParam
         })
         
@@ -174,7 +124,7 @@ const PurchaseHistory = () => {
               limit: 20,
               dateFrom: dateFrom || null,
               dateTo: dateTo || null,
-              searchName: debouncedSearchName || null,
+              searchName: search.debouncedValue || null,
               pointId: pointIdParam
             })
             requestAnimationFrame(() => {
@@ -202,22 +152,10 @@ const PurchaseHistory = () => {
         if (tableWrap && savedScrollPositionRef.current > 0) {
           tableWrap.scrollTop = savedScrollPositionRef.current
         }
-        // Восстанавливаем фокус на input только если пользователь активно печатал
-        if (isUserTypingRef.current && wasFocusedRef.current && searchInputRef.current && searchName.length > 0) {
-          const savedPosition = cursorPositionRef.current !== null 
-            ? cursorPositionRef.current 
-            : searchInputRef.current.value.length
-          if (searchInputRef.current.value === searchName) {
-            searchInputRef.current.focus()
-            const position = Math.min(savedPosition, searchInputRef.current.value.length)
-            searchInputRef.current.setSelectionRange(position, position)
-          }
-        }
-        wasFocusedRef.current = false
-        isUserTypingRef.current = false
+        restoreFocusRef.current?.()
       })
     }
-    }, [page, dateFrom, dateTo, debouncedSearchName, refreshAccessToken, searchName, isAdmin, selectedPointId])
+    }, [page, dateFrom, dateTo, search.debouncedValue, refreshAccessToken, ensureValidToken, isAdmin, selectedPointId])
 
   useEffect(() => {
     loadPurchases()
@@ -236,7 +174,7 @@ const PurchaseHistory = () => {
   useEffect(() => {
     const unregister = registerRefreshCallback((silent) => {
       // Не обновляем если пользователь активно печатает
-      if (isUserTypingRef.current) return
+      if (search.isUserTypingRef?.current) return
       
       // Сохраняем позицию скролла перед обновлением
       const tableWrap = document.querySelector('.purchases-table-wrap')
@@ -266,6 +204,7 @@ const PurchaseHistory = () => {
 
   // Загрузка активных тикетов
   const loadActiveTickets = useCallback(async () => {
+    await ensureValidToken()
     try {
       setLoadingTickets(true)
       try {
@@ -288,7 +227,7 @@ const PurchaseHistory = () => {
     } finally {
       setLoadingTickets(false)
     }
-  }, [refreshAccessToken])
+  }, [refreshAccessToken, ensureValidToken])
 
   useEffect(() => {
     loadActiveTickets()
@@ -299,6 +238,7 @@ const PurchaseHistory = () => {
 
   // Загрузка статистики по способам оплаты
   const loadPaymentStats = useCallback(async () => {
+    await ensureValidToken()
     try {
       setLoadingStats(true)
       try {
@@ -331,7 +271,7 @@ const PurchaseHistory = () => {
     } finally {
       setLoadingStats(false)
     }
-  }, [dateFrom, dateTo, refreshAccessToken, isAdmin, selectedPointId])
+  }, [dateFrom, dateTo, refreshAccessToken, ensureValidToken, isAdmin, selectedPointId])
 
   useEffect(() => {
     loadPaymentStats()
@@ -339,6 +279,7 @@ const PurchaseHistory = () => {
 
   const loadPoints = useCallback(async () => {
     if (!isAdmin) return
+    await ensureValidToken()
     try {
       const list = await pointsService.getPoints()
       setPoints(Array.isArray(list) ? list : [])
@@ -349,7 +290,7 @@ const PurchaseHistory = () => {
         setPoints(Array.isArray(list) ? list : [])
       }
     }
-  }, [isAdmin, refreshAccessToken])
+  }, [isAdmin, refreshAccessToken, ensureValidToken])
 
   useEffect(() => {
     if (isAdmin) loadPoints()
@@ -358,13 +299,11 @@ const PurchaseHistory = () => {
   const handleClearFilters = () => {
     setDateFrom('')
     setDateTo('')
-    setSearchName('')
-    setDebouncedSearchName('')
+    search.clear()
     setPage(1)
     try {
       localStorage.removeItem('purchaseHistory_dateFrom')
       localStorage.removeItem('purchaseHistory_dateTo')
-      localStorage.removeItem('purchaseHistory_searchName')
     } catch (e) {
       // Игнорируем ошибки localStorage
     }
@@ -550,33 +489,13 @@ const PurchaseHistory = () => {
               </select>
             </div>
           )}
-          <div className="filter-group">
-            <label htmlFor="searchName">Имя/Фамилия:</label>
-            <input
-              ref={searchInputRef}
-              id="searchName"
-              type="text"
-              value={searchName}
-              onChange={(e) => {
-                cursorPositionRef.current = e.target.selectionStart
-                isUserTypingRef.current = true
-                setSearchName(e.target.value)
-              }}
-              onFocus={(e) => {
-                wasFocusedRef.current = true
-                if (cursorPositionRef.current !== null) {
-                  setTimeout(() => {
-                    e.target.setSelectionRange(cursorPositionRef.current, cursorPositionRef.current)
-                  }, 0)
-                }
-              }}
-              onBlur={() => {
-                wasFocusedRef.current = false
-              }}
-              placeholder="Имя, фамилия или Ано для анонимов"
-              className="text-input"
-            />
-          </div>
+          <PurchaseHistorySearchInput
+            value={search.value}
+            onChange={search.handleChange}
+            onFocus={search.handleFocus}
+            onBlur={search.handleBlur}
+            inputRef={search.inputRef}
+          />
           <div className="filter-group">
             <label htmlFor="dateFrom">От:</label>
             <input
@@ -597,7 +516,7 @@ const PurchaseHistory = () => {
               className="date-input"
             />
           </div>
-          {(dateFrom || dateTo || searchName) && (
+          {(dateFrom || dateTo || search.value) && (
             <button onClick={handleClearFilters} className="clear-btn">
               Сбросить
             </button>
@@ -692,7 +611,10 @@ const PurchaseHistory = () => {
                         <td className="mono" data-label="ID клиента">{purchase.client_external_id || '—'}</td>
                         <td className="num mono" data-label="Сумма">{formatCurrency(purchase.amount)}</td>
                         <td className="num mono" data-label="Скидка">
-                          {purchase.discount > 0 ? `${purchase.discount}%` : '—'}
+                          {[
+                            purchase.discount > 0 ? `${purchase.discount}%` : null,
+                            purchase.employee_discount > 0 ? `${parseFloat(purchase.employee_discount).toFixed(0)}р` : null
+                          ].filter(Boolean).join(', ') || '—'}
                         </td>
                         <td className="num mono" data-label="Итого">{formatCurrency(purchase.final_amount)}</td>
                         <td data-label="Оплата">

@@ -349,6 +349,7 @@ const CategoriesPage = () => {
                         checked={!!cat.track_charts}
                         onChange={() => handleToggleTrackCharts(cat)}
                       />
+                      <span className="categories-track-checkbox-visual" />
                       <span>Учёт в графиках</span>
                     </label>
                     <button

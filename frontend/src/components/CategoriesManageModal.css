@@ -193,13 +193,51 @@
   font-weight: 500;
   font-size: 0.95rem;
   color: var(--text);
+  position: relative;
 }
 
 .categories-add-form-checkbox input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent-purple);
+  position: absolute;
+  opacity: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
   cursor: pointer;
+}
+
+.categories-add-form-checkbox-visual {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.categories-add-form-checkbox input:checked + .categories-add-form-checkbox-visual {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.categories-add-form-checkbox input:checked + .categories-add-form-checkbox-visual::after {
+  content: "✓";
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  line-height: 1;
+}
+
+.categories-add-form-checkbox:hover .categories-add-form-checkbox-visual {
+  border-color: var(--accent-purple);
+}
+
+.categories-add-form-checkbox input:focus-visible + .categories-add-form-checkbox-visual {
+  box-shadow: 0 0 0 3px var(--primary-focus);
 }
 
 .categories-add-form-checkbox-text {

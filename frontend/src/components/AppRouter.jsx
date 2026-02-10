@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import Login from './Login'
 import PurchaseHistory from './PurchaseHistory'
@@ -15,7 +15,13 @@ import HelloOverlay from './HelloOverlay'
 import './Dashboard.css'
 
 const AppRouter = () => {
-  const { isAuthenticated, loading, showHelloAfterLogin, clearShowHello } = useAuth()
+  const { isAuthenticated, loading, showHelloAfterLogin, clearShowHello, ensureValidToken } = useAuth()
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      ensureValidToken()
+    }
+  }, [isAuthenticated, ensureValidToken])
   const [currentPage, setCurrentPage] = useState(() => {
     // Загружаем последнюю открытую страницу из localStorage
     try {

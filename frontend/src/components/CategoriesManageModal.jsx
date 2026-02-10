@@ -361,7 +361,7 @@ const CategoriesManageModal = ({ onClose }) => {
                       id="new-category-name"
                       type="text"
                       placeholder="Например: КОФЕ ФАСОВАННЫЙ"
-                      value={formData.name}
+                      value={formData.name ?? ''}
                       onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     />
                     <span className="categories-add-form-field-hint">Отображается в выборе товаров</span>
@@ -373,6 +373,7 @@ const CategoriesManageModal = ({ onClose }) => {
                         checked={!!formData.trackCharts}
                         onChange={e => setFormData(prev => ({ ...prev, trackCharts: e.target.checked }))}
                       />
+                      <span className="categories-add-form-checkbox-visual" />
                       <span className="categories-add-form-checkbox-text">Вести учёт графиками</span>
                     </label>
                     <p className="categories-add-form-checkbox-desc">По этой группе будет вестись учёт для графиков и отчётов</p>
@@ -398,7 +399,7 @@ const CategoriesManageModal = ({ onClose }) => {
                             id="edit-category-name"
                             type="text"
                             placeholder="Название категории"
-                            value={formData.name}
+                            value={formData.name ?? ''}
                             onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                           />
                         </div>
@@ -409,6 +410,7 @@ const CategoriesManageModal = ({ onClose }) => {
                               checked={!!formData.trackCharts}
                               onChange={e => setFormData(prev => ({ ...prev, trackCharts: e.target.checked }))}
                             />
+                            <span className="categories-add-form-checkbox-visual" />
                             <span className="categories-add-form-checkbox-text">Вести учёт графиками</span>
                           </label>
                         </div>
@@ -450,7 +452,7 @@ const CategoriesManageModal = ({ onClose }) => {
                               <div className="categories-manage-form">
                                 <div className="categories-manage-form-group">
                                   <label>Название подкатегории — например: Группа КОФЕ: 250ГР</label>
-                                  <input placeholder="Название подкатегории" value={formData.name} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                  <input placeholder="Название подкатегории" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
                                 </div>
                                 <div className="categories-manage-form-actions">
                                   <button type="button" className="categories-manage-btn-save" onClick={handleSaveSubcategory} disabled={saving || !formData.name.trim()}>Сохранить</button>
@@ -468,7 +470,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                     <div className="categories-manage-form">
                                       <div className="categories-manage-form-group">
                                         <label>Название подкатегории</label>
-                                        <input placeholder="Название" value={formData.name} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                        <input placeholder="Название" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
                                       </div>
                                       <div className="categories-manage-form-actions">
                                         <button type="button" className="categories-manage-btn-save" onClick={handleSaveSubcategory} disabled={saving}>Сохранить</button>
@@ -503,11 +505,11 @@ const CategoriesManageModal = ({ onClose }) => {
                                             <div className="categories-manage-form">
                                               <div className="categories-manage-form-group">
                                                 <label>Название товара — как будет отображаться в заказе</label>
-                                                <input placeholder="Например: Кофе арабика 250г" value={formData.name} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                                <input placeholder="Например: Кофе арабика 250г" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
                                               </div>
                                               <div className="categories-manage-form-group">
                                                 <label>Цена (BYN) — число, можно с копейками (например 18.00)</label>
-                                                <input type="number" step="0.01" min="0" placeholder="0.00" value={formData.price} onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))} />
+                                                <input type="number" step="0.01" min="0" placeholder="0.00" value={formData.price ?? ''} onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))} />
                                               </div>
                                               <div className="categories-manage-form-group">
                                                 <label>Фотография товара (необязательно, макс. 25 МБ)</label>
@@ -555,11 +557,11 @@ const CategoriesManageModal = ({ onClose }) => {
                                                   <div className="categories-manage-form">
                                                     <div className="categories-manage-form-group">
                                                       <label>Название товара</label>
-                                                      <input placeholder="Название" value={formData.name} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                                      <input placeholder="Название" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
                                                     </div>
                                                     <div className="categories-manage-form-group">
                                                       <label>Цена (BYN)</label>
-                                                      <input type="number" step="0.01" min="0" value={formData.price} onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))} />
+                                                      <input type="number" step="0.01" min="0" value={formData.price ?? ''} onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))} />
                                                     </div>
                                                     <div className="categories-manage-form-group">
                                                       <label>Фотография товара (необязательно, макс. 25 МБ)</label>

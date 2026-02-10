@@ -26,25 +26,24 @@ const StatsPage = () => {
   const [productStats, setProductStats] = useState(null)
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
-  const [dayTopProducts, setDayTopProducts] = useState(null)
   const [points, setPoints] = useState([])
   const [selectedPointId, setSelectedPointId] = useState('') // для админа: '' = все точки
   // Локальная дата (YYYY-MM-DD), не UTC — чтобы max в календаре совпадал с «сегодня» пользователя
   const todayStr = () => new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
   // У каждого типа графика своя история: дата и период
   const [datesByViewType, setDatesByViewType] = useState(() => ({
-    day: todayStr(),
     all: todayStr(),
     category: todayStr(),
     other: todayStr()
   }))
   const [periodsByViewType, setPeriodsByViewType] = useState(() => ({
-    day: 'day',
     all: 'month',
     category: 'month',
     other: 'month'
   }))
-  const [productViewType, setProductViewType] = useState('day') // day, all, category, other
+  const [totalWithoutDiscountProducts, setTotalWithoutDiscountProducts] = useState(null)
+  const [totalWithoutDiscountCategories, setTotalWithoutDiscountCategories] = useState(null)
+  const [productViewType, setProductViewType] = useState('all') // all, category, other
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
   const [paymentStats, setPaymentStats] = useState(null)
 
@@ -156,42 +155,6 @@ const StatsPage = () => {
     }
   }
 
-  const cacheKeyDay = (date, catId, ptId) =>
-    `day_${date}_${catId || ''}_${ptId || ''}`
-
-  const loadDayTopProducts = async (date, categoryId = null) => {
-    await ensureValidToken()
-    const key = cacheKeyDay(date, categoryId, pointIdParam)
-    const cached = cacheRef.current[key]
-    if (cached) {
-      setDayTopProducts(cached)
-      setLoading(false)
-      setChartLoading(false)
-      return
-    }
-    try {
-      setChartLoading(true)
-      const data = await orderStatsService.getDayTopProducts(date, categoryId, 5, pointIdParam)
-      cacheRef.current[key] = data
-      setDayTopProducts(data)
-    } catch (e) {
-      if (e?.message === 'UNAUTHORIZED') {
-        const refreshed = await refreshAccessToken()
-        if (refreshed) {
-          const data = await orderStatsService.getDayTopProducts(date, categoryId, 5, pointIdParam)
-          cacheRef.current[key] = data
-          setDayTopProducts(data)
-          return
-        }
-      }
-      showNotification(e.message || 'Ошибка загрузки топ товаров за день', 'error')
-      setDayTopProducts(null)
-    } finally {
-      setLoading(false)
-      setChartLoading(false)
-    }
-  }
-
   const cacheKeyStats = (viewType, dateFrom, dateTo, catId, ptId) =>
     `${viewType}_${dateFrom}_${dateTo}_${catId || ''}_${ptId || ''}`
 
@@ -201,6 +164,8 @@ const StatsPage = () => {
     setCategoriesStats(cached.categoriesStats || [])
     setCategoryProductsStats(cached.categoryProductsStats || [])
     setPaymentStats(cached.paymentStats ?? null)
+    setTotalWithoutDiscountProducts(cached.totalWithoutDiscountProducts ?? null)
+    setTotalWithoutDiscountCategories(cached.totalWithoutDiscountCategories ?? null)
   }
 
   const loadStats = async () => {
@@ -248,13 +213,18 @@ const StatsPage = () => {
           if (productViewType === 'all') {
             cachedData.productsStats = results[0].products || []
             cachedData.categoriesStats = results[1].categories || []
+            cachedData.totalWithoutDiscountProducts = results[0].totalWithoutDiscount ?? null
+            cachedData.totalWithoutDiscountCategories = results[1].totalWithoutDiscount ?? null
           } else if (productViewType === 'category' && selectedCategoryId) {
             cachedData.categoryProductsStats = results[0].products || []
             cachedData.categoriesStats = results[1].categories || []
+            cachedData.totalWithoutDiscountCategories = results[1].totalWithoutDiscount ?? null
           } else if (productViewType === 'other') {
             cachedData.productsStats = results[0].products || []
             cachedData.categoriesStats = results[1].categories || []
             cachedData.paymentStats = results[2] || null
+            cachedData.totalWithoutDiscountProducts = results[0].totalWithoutDiscount ?? null
+            cachedData.totalWithoutDiscountCategories = results[1].totalWithoutDiscount ?? null
           }
           cacheRef.current[key] = cachedData
           applyCachedStats(cachedData)
@@ -278,20 +248,14 @@ const StatsPage = () => {
   }
 
   useEffect(() => {
-    if (productViewType === 'day') {
-      loadDayTopProducts(selectedDate, selectedCategoryId || null)
-    } else {
-      loadStats()
-    }
+    loadStats()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, productViewType, selectedCategoryId, selectedDate, selectedPointId])
+  }, [period, selectedDate, productViewType, selectedCategoryId, selectedPointId])
 
   useEffect(() => {
     loadCategories()
     if (isAdmin) {
       loadPoints()
-    } else if (productViewType === 'all') {
-      setProductViewType('day')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin])
@@ -303,14 +267,7 @@ const StatsPage = () => {
       setProducts([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategoryId, productViewType, period])
-
-  useEffect(() => {
-    if (productViewType === 'day' && selectedDate) {
-      loadDayTopProducts(selectedDate, selectedCategoryId || null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedCategoryId, productViewType])
+  }, [selectedCategoryId, productViewType, period, selectedDate])
 
   const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 
@@ -342,7 +299,7 @@ const StatsPage = () => {
     }))
   }
 
-  const DonutChartSection = ({ title, dateLabel, data }) => {
+  const DonutChartSection = ({ title, dateLabel, data, totalWithoutDiscount }) => {
     const donutData = toDonutData(data)
     const totalSum = donutData.reduce((s, i) => s + (i.revenue || 0), 0)
     if (donutData.length === 0) return null
@@ -352,7 +309,10 @@ const StatsPage = () => {
           <h3>{title}</h3>
           <div className="day-info">
             {dateLabel && <span className="day-date">{dateLabel}</span>}
-            <span className="day-total">Всего: {totalSum.toFixed(2)} BYN</span>
+            <span className="day-total">Всего (с учетом скидок): {totalSum.toFixed(2)} BYN</span>
+            {totalWithoutDiscount != null && totalWithoutDiscount > 0 && (
+              <span className="day-total-without">Без учета скидок: {Number(totalWithoutDiscount).toFixed(2)} BYN</span>
+            )}
           </div>
         </div>
         <div className="day-top-products-content">
@@ -406,6 +366,9 @@ const StatsPage = () => {
                   <div className="legend-percentage">{product.percentage}%</div>
                   <div className="legend-name">{product.name}</div>
                   <div className="legend-revenue">{Number(product.revenue).toFixed(2)} BYN</div>
+                  <div className="legend-quantity">
+                    {product.quantity != null ? `${product.quantity} шт` : product.count != null ? `${product.count} продаж` : product.orderCount != null ? `${product.orderCount} заказов` : '—'}
+                  </div>
                 </div>
               </div>
             ))}
@@ -435,50 +398,48 @@ const StatsPage = () => {
       <div className="stats-header">
         <h2>Графики</h2>
         <div className="period-filters">
-          {productViewType !== 'day' && (
-            <>
-              <button
-                type="button"
-                onClick={() => setPeriod('day')}
-                className={`period-btn ${period === 'day' ? 'active' : ''}`}
-              >
-                День
-              </button>
-              <button
-                type="button"
-                onClick={() => setPeriod('month')}
-                className={`period-btn ${period === 'month' ? 'active' : ''}`}
-              >
-                Месяц
-              </button>
-              <button
-                type="button"
-                onClick={() => setPeriod('quarter')}
-                className={`period-btn ${period === 'quarter' ? 'active' : ''}`}
-              >
-                Квартал
-              </button>
-              <button
-                type="button"
-                onClick={() => setPeriod('year')}
-                className={`period-btn ${period === 'year' ? 'active' : ''}`}
-              >
-                Год
-              </button>
-            </>
-          )}
-          {(period === 'day' || productViewType === 'day') && (
-            <label className="stats-point-select-wrap">
-              <span className="stats-point-label">Дата:</span>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="stats-date-input"
-                max={todayStr()}
-              />
-            </label>
-          )}
+          <div className="period-buttons-row">
+            <button
+              type="button"
+              onClick={() => setPeriod('day')}
+              className={`period-btn ${period === 'day' ? 'active' : ''}`}
+            >
+              День
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('month')}
+              className={`period-btn ${period === 'month' ? 'active' : ''}`}
+            >
+              Месяц
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('quarter')}
+              className={`period-btn ${period === 'quarter' ? 'active' : ''}`}
+            >
+              Квартал
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriod('year')}
+              className={`period-btn ${period === 'year' ? 'active' : ''}`}
+            >
+              Год
+            </button>
+            {period === 'day' && (
+              <label className="stats-date-inline">
+                <span className="stats-date-label">Дата:</span>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="stats-date-input"
+                  max={todayStr()}
+                />
+              </label>
+            )}
+          </div>
           {isAdmin && points.length > 0 && productViewType !== 'all' && (
             <label className="stats-point-select-wrap">
               <span className="stats-point-label">Точка:</span>
@@ -505,15 +466,6 @@ const StatsPage = () => {
               <div className="filter-group">
                 <label>Тип графика:</label>
                 <div className="view-type-buttons">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProductViewType('day')
-                    }}
-                    className={`view-type-btn ${productViewType === 'day' ? 'active' : ''}`}
-                  >
-                    По дням
-                  </button>
                   {isAdmin && (
                     <button
                       type="button"
@@ -549,38 +501,6 @@ const StatsPage = () => {
                 </div>
               </div>
 
-              {/* Дата для любого типа графика (у каждого типа своя дата в datesByViewType) */}
-              <div className="filter-group">
-                <label htmlFor="stats-date-select">
-                  {productViewType === 'day' ? 'Выберите день:' : 'Дата (для периода «День»):'}
-                </label>
-                <input
-                  id="stats-date-select"
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="stats-date-input"
-                  max={todayStr()}
-                />
-              </div>
-
-              {productViewType === 'day' && (
-                <div className="filter-group">
-                  <label htmlFor="category-select-day">Категория (опционально):</label>
-                  <select
-                    id="category-select-day"
-                    value={selectedCategoryId}
-                    onChange={(e) => setSelectedCategoryId(e.target.value)}
-                    className="stats-select"
-                  >
-                    <option value="">Все категории</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {productViewType === 'category' && (
                 <div className="filter-group">
                   <label htmlFor="category-select">Категория:</label>
@@ -603,103 +523,24 @@ const StatsPage = () => {
 
             </div>
 
-            {/* График по дням */}
-            {productViewType === 'day' && (
-              <div className="chart-section day-top-products-section">
-                <div className="day-top-products-header">
-                  <h3>Топ 5 товаров</h3>
-                  <div className="day-info">
-                    {selectedDate && (
-                      <span className="day-date">
-                        {new Date(selectedDate).toLocaleDateString('ru-RU', { 
-                          day: 'numeric', 
-                          month: 'long', 
-                          year: 'numeric' 
-                        })}
-                      </span>
-                    )}
-                    {dayTopProducts?.products?.length > 0 && (
-                      <span className="day-total">
-                        Всего: {dayTopProducts.products.reduce((s, p) => s + (p.revenue || 0), 0).toFixed(2)} BYN
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {dayTopProducts && dayTopProducts.products && dayTopProducts.products.length > 0 ? (
-                  <div className="day-top-products-content">
-                    <div className="donut-chart-container">
-                      <ResponsiveContainer width="100%" height={350}>
-                        <PieChart>
-                          <Pie
-                            data={dayTopProducts.products}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={80}
-                            outerRadius={140}
-                            paddingAngle={2}
-                            dataKey="revenue"
-                            label={renderPieLabel}
-                            labelLine={false}
-                          >
-                            {dayTopProducts.products.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            content={({ active, payload }) => {
-                              if (active && payload && payload.length) {
-                                const data = payload[0].payload
-                                return (
-                                  <div className="chart-tooltip">
-                                    <p className="chart-tooltip-label">{data.name}</p>
-                                    <p className="chart-tooltip-value">{data.percentage}%</p>
-                                    <p className="chart-tooltip-value">{data.revenue.toFixed(2)} BYN</p>
-                                    <p className="chart-tooltip-count">Количество: {data.quantity} шт</p>
-                                  </div>
-                                )
-                              }
-                              return null
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="day-top-products-legend">
-                      {dayTopProducts.products.map((product, index) => (
-                        <div key={product.id || index} className="legend-item">
-                          <div 
-                            className="legend-color" 
-                            style={{ backgroundColor: product.color || COLORS[index % COLORS.length] }}
-                          />
-                          <div className="legend-content">
-                            <div className="legend-percentage">{product.percentage}%</div>
-                            <div className="legend-name">{product.name}</div>
-                            <div className="legend-revenue">{product.revenue.toFixed(2)} BYN</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="empty-state">Нет данных за выбранный день</div>
-                )}
-              </div>
-            )}
-
             {/* Общий график — объединённые данные по всем точкам (Червенский + Валерианова) */}
             {productViewType === 'all' && (
               <>
                 {productsStats.length > 0 && (
                   <DonutChartSection
                     title={`Продажи по напиткам ${getPeriodLabel()} (все точки)`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={productsStats.slice(0, 10)}
+                    totalWithoutDiscount={totalWithoutDiscountProducts}
                   />
                 )}
 
                 {categoriesStats.length > 0 && (
                   <DonutChartSection
                     title={`Продажи по категориям товаров ${getPeriodLabel()} (все точки)`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={categoriesStats}
+                    totalWithoutDiscount={totalWithoutDiscountCategories}
                   />
                 )}
 
@@ -710,7 +551,7 @@ const StatsPage = () => {
                       <p className="empty-state-hint">
                         {(() => {
                           const { dateFrom, dateTo } = getDateRange(period)
-                          return `Период: ${dateFrom} — ${dateTo}. Попробуйте «День» и сегодняшнюю дату.`
+                          return `Период: ${dateFrom} — ${dateTo}.`
                         })()}
                       </p>
                     </div>
@@ -725,13 +566,16 @@ const StatsPage = () => {
                 {categoriesStats.length > 0 && (
                   <DonutChartSection
                     title={`Статистика категории ${getPeriodLabel()}`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={categoriesStats}
+                    totalWithoutDiscount={totalWithoutDiscountCategories}
                   />
                 )}
 
                 {categoryProductsStats.length > 0 && (
                   <DonutChartSection
                     title={`Товары категории ${getPeriodLabel()}`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={categoryProductsStats.slice(0, 10)}
                   />
                 )}
@@ -751,25 +595,33 @@ const StatsPage = () => {
                 {categoriesStats.length > 0 && (
                   <DonutChartSection
                     title={`Продажи по категориям (группы) ${getPeriodLabel()}`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={categoriesStats}
+                    totalWithoutDiscount={totalWithoutDiscountCategories}
                   />
                 )}
                 {productsStats.length > 0 && (
                   <DonutChartSection
                     title={`Топ товаров ${getPeriodLabel()}`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={productsStats.slice(0, 10)}
+                    totalWithoutDiscount={totalWithoutDiscountProducts}
                   />
                 )}
-                {paymentStats && (paymentStats.cash?.total > 0 || paymentStats.card?.total > 0) && (
+                {paymentStats && (paymentStats.cash?.total > 0 || paymentStats.card?.total > 0 || paymentStats.mixed?.total > 0) && (
                   <DonutChartSection
                     title={`Способы оплаты ${getPeriodLabel()}`}
+                    dateLabel={period === 'day' && selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
                     data={[
                       { name: 'Наличные', revenue: paymentStats.cash?.total || 0, count: paymentStats.cash?.count || 0 },
-                      { name: 'Карта', revenue: paymentStats.card?.total || 0, count: paymentStats.card?.count || 0 }
+                      { name: 'Карта', revenue: paymentStats.card?.total || 0, count: paymentStats.card?.count || 0 },
+                      ...(paymentStats.mixed && (paymentStats.mixed.total > 0 || paymentStats.mixed.count > 0)
+                        ? [{ name: 'Смешанная', revenue: paymentStats.mixed.total || 0, count: paymentStats.mixed.count || 0 }]
+                        : [])
                     ]}
                   />
                 )}
-                {productViewType === 'other' && categoriesStats.length === 0 && productsStats.length === 0 && (!paymentStats || (paymentStats.cash?.total === 0 && paymentStats.card?.total === 0)) && !loading && (
+                {productViewType === 'other' && categoriesStats.length === 0 && productsStats.length === 0 && (!paymentStats || ((paymentStats.cash?.total ?? 0) === 0 && (paymentStats.card?.total ?? 0) === 0 && (paymentStats.mixed?.total ?? 0) === 0)) && !loading && (
                   <div className="empty-state">Нет данных для отображения</div>
                 )}
               </>

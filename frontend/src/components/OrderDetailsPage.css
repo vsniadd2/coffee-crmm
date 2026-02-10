@@ -141,6 +141,11 @@
   font-weight: 700;
 }
 
+.day-total-without {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .day-top-products-content {
   display: flex;
   gap: 40px;
@@ -217,6 +222,12 @@
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.legend-quantity {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 2px;
 }
 
 @media (max-width: 768px) {
@@ -315,6 +326,28 @@
 .loading-spinner {
   font-size: 1.1rem;
   color: var(--muted);
+}
+
+@media (max-width: 1024px) {
+  .day-top-products-content {
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .donut-chart-container {
+    max-width: 100%;
+    min-width: 0;
+    order: 2;
+  }
+
+  .day-top-products-legend {
+    width: 100%;
+    order: 1;
+    padding: 16px;
+    background: var(--bg-soft);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-soft);
+  }
 }
 
 @media (max-width: 768px) {
