@@ -32,7 +32,9 @@ const ProductSelector = ({ onProductsChange, initialTotal = 0 }) => {
         setLoadingProducts(false)
       }
     } catch (e) {
-      console.error('Ошибка загрузки товаров:', e)
+      if (e?.message !== 'UNAUTHORIZED') {
+        console.error('Ошибка загрузки товаров:', e)
+      }
       if (e?.message === 'UNAUTHORIZED') {
         const ok = await refreshAccessToken()
         if (ok) return loadProductsTree(silent)

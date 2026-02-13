@@ -442,7 +442,7 @@ const ClientList = ({ onSelectClient }) => {
             Страница {pagination.page} из {pagination.totalPages} ({pagination.total} всего)
           </span>
           <button
-            onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+            onClick={() => setPage((p) => p + 1)}
             disabled={page === pagination.totalPages || loading}
             className="pagination-btn"
           >
