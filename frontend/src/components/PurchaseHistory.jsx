@@ -20,7 +20,14 @@ const PurchaseHistory = () => {
   const [purchases, setPurchases] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(() => {
+    try {
+      const saved = localStorage.getItem('purchaseHistory_page')
+      return saved ? parseInt(saved, 10) : 1
+    } catch {
+      return 1
+    }
+  })
   const [totalPages, setTotalPages] = useState(1)
   const [dateFrom, setDateFrom] = useState(() => {
     try {
@@ -52,9 +59,10 @@ const PurchaseHistory = () => {
   const tableScrollRef = useRef(null)
   const savedScrollPositionRef = useRef(0)
   const restoreFocusRef = useRef(null)
+  const resetPageToFirst = useCallback(() => setPage(1), [])
 
   const search = usePurchaseHistorySearch({
-    onDebouncedChange: () => setPage(1),
+    onDebouncedChange: resetPageToFirst,
     isInitialLoadRef: isInitialLoad
   })
   restoreFocusRef.current = search.restoreFocusIfNeeded
@@ -84,6 +92,15 @@ const PurchaseHistory = () => {
     }
   }, [dateTo])
 
+  // Сохраняем номер страницы в localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('purchaseHistory_page', page.toString())
+    } catch (e) {
+      // Игнорируем ошибки localStorage
+    }
+  }, [page])
+
   const loadPurchases = useCallback(async (silent = false) => {
     await ensureValidToken()
     try {
@@ -110,7 +127,12 @@ const PurchaseHistory = () => {
         // Обновляем состояние с использованием requestAnimationFrame для плавности
         requestAnimationFrame(() => {
           setPurchases(data.purchases || [])
-          setTotalPages(data.pagination?.totalPages || 1)
+          const newTotalPages = data.pagination?.totalPages || 1
+          setTotalPages(newTotalPages)
+          // Если текущая страница больше общего количества страниц, сбрасываем на последнюю
+          if (page > newTotalPages) {
+            setPage(newTotalPages)
+          }
         })
         
         isInitialLoad.current = false
@@ -129,7 +151,12 @@ const PurchaseHistory = () => {
             })
             requestAnimationFrame(() => {
               setPurchases(data.purchases || [])
-              setTotalPages(data.pagination?.totalPages || 1)
+              const newTotalPages = data.pagination?.totalPages || 1
+              setTotalPages(newTotalPages)
+              // Если текущая страница больше общего количества страниц, сбрасываем на последнюю
+              if (page > newTotalPages) {
+                setPage(newTotalPages)
+              }
             })
             isInitialLoad.current = false
             return
@@ -304,6 +331,7 @@ const PurchaseHistory = () => {
     try {
       localStorage.removeItem('purchaseHistory_dateFrom')
       localStorage.removeItem('purchaseHistory_dateTo')
+      localStorage.removeItem('purchaseHistory_page')
     } catch (e) {
       // Игнорируем ошибки localStorage
     }
