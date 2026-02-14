@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS points (
 );
 
 -- Точки по умолчанию (id 1 и 2 для совместимости с пользователями)
-INSERT INTO points (id, name) VALUES (1, 'Червенский'), (2, 'Валерианова')
+INSERT INTO points (id, name) VALUES (1, 'Червенский'), (2, 'Валерьяново')
 ON CONFLICT (id) DO NOTHING;
 
 -- Привязка пользователя к точке (user — одна точка, admin — NULL, видит все)

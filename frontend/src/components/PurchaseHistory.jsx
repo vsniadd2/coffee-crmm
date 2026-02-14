@@ -249,7 +249,6 @@ const PurchaseHistory = () => {
         throw e
       }
     } catch (err) {
-      console.error('Ошибка загрузки тикетов:', err)
       setActiveTickets([])
     } finally {
       setLoadingTickets(false)
@@ -293,7 +292,6 @@ const PurchaseHistory = () => {
         throw e
       }
     } catch (err) {
-      console.error('Ошибка загрузки статистики по способам оплаты:', err)
       setPaymentStats(null)
     } finally {
       setLoadingStats(false)
@@ -312,9 +310,13 @@ const PurchaseHistory = () => {
       setPoints(Array.isArray(list) ? list : [])
     } catch (e) {
       if (e?.message === 'UNAUTHORIZED') {
-        await refreshAccessToken()
-        const list = await pointsService.getPoints()
-        setPoints(Array.isArray(list) ? list : [])
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          const list = await pointsService.getPoints()
+          setPoints(Array.isArray(list) ? list : [])
+        }
+      } else {
+        setPoints([])
       }
     }
   }, [isAdmin, refreshAccessToken, ensureValidToken])

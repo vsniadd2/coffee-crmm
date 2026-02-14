@@ -1004,6 +1004,59 @@ app.get('/api/orders/stats/product', verifyAccessToken, async (req, res) => {
 // Константа цветов для графиков
 const COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
+// Маршрут для получения продаж за неделю (по дням)
+// dateFrom, dateTo — опционально; если не указаны — последние 7 дней
+app.get('/api/orders/stats/weekly-sales', verifyAccessToken, async (req, res) => {
+  try {
+    const { pointId } = getPointFilter(req);
+    const dateFrom = req.query.dateFrom || null;
+    const dateTo = req.query.dateTo || null;
+
+    const useRange = dateFrom && dateTo;
+    const params = [];
+    if (pointId != null) params.push(pointId);
+    if (useRange) params.push(dateFrom, dateTo);
+
+    const daysSeries = useRange
+      ? `generate_series($${pointId != null ? 2 : 1}::date, $${pointId != null ? 3 : 2}::date, '1 day'::interval)`
+      : `generate_series(CURRENT_DATE - interval '6 days', CURRENT_DATE, '1 day'::interval)`;
+    const salesFilter = useRange
+      ? `AND DATE(t.created_at) >= $${pointId != null ? 2 : 1} AND DATE(t.created_at) <= $${pointId != null ? 3 : 2}`
+      : `AND DATE(t.created_at) >= CURRENT_DATE - interval '6 days' AND DATE(t.created_at) <= CURRENT_DATE`;
+
+    const query = `
+      WITH days AS (
+        SELECT d::date as day FROM ${daysSeries} d
+      ),
+      sales AS (
+        SELECT DATE(t.created_at) as day, COALESCE(SUM(t.final_amount), 0) as total, COUNT(*) as count
+        FROM transactions t
+        WHERE COALESCE(t.operation_type, 'sale') != 'return' ${salesFilter}
+          ${pointId != null ? 'AND t.point_id = $1' : ''}
+        GROUP BY DATE(t.created_at)
+      )
+      SELECT d.day::text as date, COALESCE(s.total, 0)::float as total, COALESCE(s.count, 0)::int as count
+      FROM days d LEFT JOIN sales s ON d.day = s.day
+      ORDER BY d.day ASC
+    `;
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      days: result.rows.map(r => ({
+        date: r.date,
+        total: parseFloat(r.total || 0),
+        count: parseInt(r.count || 0, 10)
+      })),
+      dateFrom: useRange ? dateFrom : undefined,
+      dateTo: useRange ? dateTo : undefined
+    });
+  } catch (error) {
+    console.error('Ошибка получения продаж за неделю:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // Маршрут для получения топ товаров за конкретный день
 app.get('/api/orders/stats/day-top-products', verifyAccessToken, async (req, res) => {
   try {

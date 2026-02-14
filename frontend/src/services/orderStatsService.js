@@ -115,6 +115,28 @@ export const orderStatsService = {
     return response.json()
   },
 
+  async getWeeklySales(dateFrom = null, dateTo = null, pointId = null) {
+    const params = new URLSearchParams()
+    if (dateFrom) params.append('dateFrom', dateFrom)
+    if (dateTo) params.append('dateTo', dateTo)
+    if (pointId != null && pointId !== '') params.append('pointId', pointId)
+
+    const response = await fetch(`${API_URL}/orders/stats/weekly-sales?${params.toString()}`, {
+      headers: getAuthHeaders()
+    })
+
+    if (response.status === 403) {
+      throw new Error('UNAUTHORIZED')
+    }
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || 'Ошибка загрузки продаж за неделю')
+    }
+
+    return response.json()
+  },
+
   async getDayTopProducts(date, categoryId = null, limit = 5, pointId = null) {
     const params = new URLSearchParams()
     params.append('date', date)

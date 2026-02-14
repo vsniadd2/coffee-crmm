@@ -9,7 +9,8 @@ import {
   Pie,
   Cell,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
+  BarChart
 } from 'recharts'
 import './StatsPage.css'
 //g
@@ -28,6 +29,9 @@ const StatsPage = () => {
   const [products, setProducts] = useState([])
   const [points, setPoints] = useState([])
   const [selectedPointId, setSelectedPointId] = useState('') // для админа: '' = все точки
+  const [weeklySales, setWeeklySales] = useState([])
+  const [weeklyPointId, setWeeklyPointId] = useState('') // для графика за неделю (админ)
+  const [weeklyDate, setWeeklyDate] = useState(() => new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })) // дата для выбора недели
   // Локальная дата (YYYY-MM-DD), не UTC — чтобы max в календаре совпадал с «сегодня» пользователя
   const todayStr = () => new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
   // У каждого типа графика своя история: дата и период
@@ -43,7 +47,7 @@ const StatsPage = () => {
   }))
   const [totalWithoutDiscountProducts, setTotalWithoutDiscountProducts] = useState(null)
   const [totalWithoutDiscountCategories, setTotalWithoutDiscountCategories] = useState(null)
-  const [productViewType, setProductViewType] = useState('all') // all, category, other
+  const [productViewType, setProductViewType] = useState('all') // all, category, other, weekly
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
   const [paymentStats, setPaymentStats] = useState(null)
 
@@ -129,6 +133,43 @@ const StatsPage = () => {
         await refreshAccessToken()
         const list = await pointsService.getPoints()
         setPoints(Array.isArray(list) ? list : [])
+      }
+    }
+  }
+
+  // Неделя Пн–Вс по выбранной дате
+  const getWeekRange = (dateStr) => {
+    const d = new Date(dateStr + 'T12:00:00')
+    const day = d.getDay()
+    const mondayOffset = day === 0 ? -6 : 1 - day
+    const monday = new Date(d)
+    monday.setDate(d.getDate() + mondayOffset)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    return {
+      dateFrom: monday.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+      dateTo: sunday.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
+    }
+  }
+
+  const loadWeeklySales = async () => {
+    await ensureValidToken()
+    try {
+      const { dateFrom, dateTo } = getWeekRange(weeklyDate)
+      const pointIdParam = isAdmin && weeklyPointId !== '' ? weeklyPointId : null
+      const data = await orderStatsService.getWeeklySales(dateFrom, dateTo, pointIdParam)
+      setWeeklySales(data.days || [])
+    } catch (e) {
+      if (e?.message === 'UNAUTHORIZED') {
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+          const { dateFrom, dateTo } = getWeekRange(weeklyDate)
+          const pointIdParam = isAdmin && weeklyPointId !== '' ? weeklyPointId : null
+          const data = await orderStatsService.getWeeklySales(dateFrom, dateTo, pointIdParam)
+          setWeeklySales(data.days || [])
+        }
+      } else {
+        setWeeklySales([])
       }
     }
   }
@@ -248,7 +289,9 @@ const StatsPage = () => {
   }
 
   useEffect(() => {
-    loadStats()
+    if (productViewType !== 'weekly') {
+      loadStats()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, selectedDate, productViewType, selectedCategoryId, selectedPointId])
 
@@ -259,6 +302,11 @@ const StatsPage = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin])
+
+  useEffect(() => {
+    loadWeeklySales()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weeklyPointId, weeklyDate, isAdmin])
 
   useEffect(() => {
     if (productViewType === 'category' && selectedCategoryId) {
@@ -397,7 +445,7 @@ const StatsPage = () => {
     <div className="stats-page">
       <div className="stats-header">
         <h2>Графики</h2>
-        <div className="period-filters">
+        <div className="period-filters" style={{ display: productViewType === 'weekly' ? 'none' : undefined }}>
           <div className="period-buttons-row">
             <button
               type="button"
@@ -460,70 +508,223 @@ const StatsPage = () => {
 
       <div className={`stats-content ${chartLoading ? 'stats-content-loading' : ''}`}>
         {chartLoading && <div className="stats-chart-loading-overlay" aria-hidden="true" />}
-        {(
-          <div className="products-stats-container stats-content-inner">
-            <div className="products-stats-filters">
-              <div className="filter-group">
-                <label>Тип графика:</label>
-                <div className="view-type-buttons">
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProductViewType('all')
-                        setSelectedCategoryId('')
-                      }}
-                      className={`view-type-btn ${productViewType === 'all' ? 'active' : ''}`}
-                      title="Данные по обеим точкам (Червенский + Валерианова)"
-                    >
-                      Общий (обе точки)
-                    </button>
-                  )}
+
+        <div className="products-stats-container stats-content-inner">
+          <div className="products-stats-filters">
+            <div className="filter-group">
+              <label>Тип графика:</label>
+              <div className="view-type-buttons">
+                {isAdmin && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setProductViewType('category')
-                    }}
-                    className={`view-type-btn ${productViewType === 'category' ? 'active' : ''}`}
+                    onClick={() => { setProductViewType('all'); setSelectedCategoryId('') }}
+                    className={`view-type-btn ${productViewType === 'all' ? 'active' : ''}`}
+                    title="Данные по обеим точкам (Червенский + Валерьяново)"
                   >
-                    По категории
+                    Общий (обе точки)
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProductViewType('other')
-                      setSelectedCategoryId('')
-                    }}
-                    className={`view-type-btn ${productViewType === 'other' ? 'active' : ''}`}
-                  >
-                    Другие графики
-                  </button>
-                </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setProductViewType('category') }}
+                  className={`view-type-btn ${productViewType === 'category' ? 'active' : ''}`}
+                >
+                  По категории
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setProductViewType('weekly'); setSelectedCategoryId('') }}
+                  className={`view-type-btn ${productViewType === 'weekly' ? 'active' : ''}`}
+                >
+                  Продажи за неделю
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setProductViewType('other'); setSelectedCategoryId('') }}
+                  className={`view-type-btn ${productViewType === 'other' ? 'active' : ''}`}
+                >
+                  Другие графики
+                </button>
               </div>
-
-              {productViewType === 'category' && (
-                <div className="filter-group">
-                  <label htmlFor="category-select">Категория:</label>
-                  <select
-                    id="category-select"
-                    value={selectedCategoryId}
-                    onChange={(e) => {
-                      setSelectedCategoryId(e.target.value)
-                      setCategoryProductsStats([])
-                    }}
-                    className="stats-select"
-                  >
-                    <option value="">Выберите категорию</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
             </div>
 
-            {/* Общий график — объединённые данные по всем точкам (Червенский + Валерианова) */}
+            {productViewType === 'category' && (
+              <div className="filter-group">
+                <label htmlFor="category-select">Категория:</label>
+                <select
+                  id="category-select"
+                  value={selectedCategoryId}
+                  onChange={(e) => { setSelectedCategoryId(e.target.value); setCategoryProductsStats([]) }}
+                  className="stats-select"
+                >
+                  <option value="">Выберите категорию</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+        {/* Продажи за неделю — отдельная вкладка */}
+        {productViewType === 'weekly' && (
+        <div className="chart-section weekly-sales-section">
+          <div className="weekly-sales-header">
+            <h3>Продажи за неделю</h3>
+            <div className="weekly-sales-controls">
+              <div className="weekly-date-picker">
+                <label className="weekly-date-label">
+                  <span>Неделя:</span>
+                  <input
+                    type="date"
+                    value={weeklyDate}
+                    onChange={(e) => setWeeklyDate(e.target.value)}
+                    className="stats-date-input weekly-date-input"
+                  />
+                </label>
+              </div>
+              <div className="weekly-nav-buttons">
+                <button
+                  type="button"
+                  className="period-btn weekly-nav-btn"
+                  onClick={() => {
+                    const d = new Date(weeklyDate + 'T12:00:00')
+                    d.setDate(d.getDate() - 7)
+                    setWeeklyDate(d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }))
+                  }}
+                  title="Предыдущая неделя"
+                >
+                  ← Пред.
+                </button>
+                <button
+                  type="button"
+                  className="period-btn weekly-nav-btn"
+                  onClick={() => {
+                    const d = new Date(weeklyDate + 'T12:00:00')
+                    d.setDate(d.getDate() + 7)
+                    setWeeklyDate(d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }))
+                  }}
+                  disabled={getWeekRange(weeklyDate).dateTo >= todayStr()}
+                  title="Следующая неделя"
+                >
+                  След. →
+                </button>
+                <button
+                  type="button"
+                  className="period-btn weekly-nav-btn"
+                  onClick={() => setWeeklyDate(todayStr())}
+                  title="Текущая неделя"
+                >
+                  Сегодня
+                </button>
+              </div>
+              {isAdmin && points.length > 0 && (
+                <label className="stats-point-select-wrap">
+                  <span className="stats-point-label">Точка:</span>
+                  <select
+                    className="stats-point-select weekly-point-select"
+                    value={weeklyPointId}
+                    onChange={(e) => setWeeklyPointId(e.target.value)}
+                  >
+                    <option value="">Все точки</option>
+                    {points.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          </div>
+          {weeklySales.length > 0 ? (
+            (() => {
+              const filtered = weeklySales.filter(d => (d.total || 0) > 0)
+              if (filtered.length === 0) {
+                return <div className="empty-state-small">Нет продаж за выбранную неделю</div>
+              }
+              const weeklyDonutData = toDonutData(filtered.map(d => ({
+                name: new Date(d.date + 'T12:00:00').toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' }),
+                revenue: d.total,
+                count: d.count
+              })), 7)
+              return (
+                <div className="day-top-products-section">
+                  <div className="day-top-products-header">
+                    <div className="day-info">
+                      <span className="day-date">
+                        {(() => {
+                          const { dateFrom, dateTo } = getWeekRange(weeklyDate)
+                          const from = new Date(dateFrom + 'T12:00:00')
+                          const to = new Date(dateTo + 'T12:00:00')
+                          return `${from.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} — ${to.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                        })()}
+                      </span>
+                      <span className="day-total">
+                        Всего: {weeklySales.reduce((s, d) => s + (d.total || 0), 0).toFixed(2)} BYN · {weeklySales.reduce((s, d) => s + (d.count || 0), 0)} продаж
+                      </span>
+                    </div>
+                  </div>
+                  <div className="day-top-products-content">
+                    <div className="donut-chart-container">
+                      <ResponsiveContainer width="100%" height={350}>
+                        <PieChart>
+                          <Pie
+                            data={weeklyDonutData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={80}
+                            outerRadius={140}
+                            paddingAngle={2}
+                            dataKey="revenue"
+                            label={renderPieLabel}
+                            labelLine={false}
+                          >
+                            {weeklyDonutData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const d = payload[0].payload
+                                return (
+                                  <div className="chart-tooltip">
+                                    <p className="chart-tooltip-label">{d.name}</p>
+                                    <p className="chart-tooltip-value">{d.percentage}%</p>
+                                    <p className="chart-tooltip-value">{Number(d.revenue).toFixed(2)} BYN</p>
+                                    <p className="chart-tooltip-count">{d.count} продаж</p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="day-top-products-legend">
+                      {weeklyDonutData.map((product, index) => (
+                        <div key={product.id || index} className="legend-item">
+                          <div className="legend-color" style={{ backgroundColor: product.color }} />
+                          <div className="legend-content">
+                            <div className="legend-percentage">{product.percentage}%</div>
+                            <div className="legend-name">{product.name}</div>
+                            <div className="legend-revenue">{Number(product.revenue).toFixed(2)} BYN</div>
+                            <div className="legend-quantity">{product.count} продаж</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })()
+          ) : (
+            <div className="empty-state-small">Нет данных за выбранную неделю</div>
+          )}
+        </div>
+        )}
+
+        {/* Общий, по категории, другие графики */}
             {productViewType === 'all' && (
               <>
                 {productsStats.length > 0 && (
@@ -626,8 +827,7 @@ const StatsPage = () => {
                 )}
               </>
             )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   )
