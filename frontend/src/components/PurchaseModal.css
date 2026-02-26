@@ -4,6 +4,40 @@
   font-size: 0.95rem;
 }
 
+.purchase-modal-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.purchase-modal-tab {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.purchase-modal-tab:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  border-color: var(--border-soft);
+}
+
+.purchase-modal-tab.active {
+  background: var(--accent, #2d7d46);
+  border-color: var(--accent, #2d7d46);
+  color: #fff;
+}
+
+.modal-right-column-full {
+  grid-column: 1 / -1;
+  max-width: 400px;
+}
+
 .purchase-summary {
   display: flex;
   justify-content: space-between;

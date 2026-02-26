@@ -73,8 +73,9 @@ export const clientService = {
     return data === null ? null : data
   },
 
-  async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null) {
+  async addPurchase(clientDbId, price, items = [], paymentMethod = 'cash', employeeDiscount = 0, mixedParts = null, isTopUp = false) {
     const body = { price, items, paymentMethod, employeeDiscount }
+    if (isTopUp) body.isTopUp = true
     if (paymentMethod === 'mixed' && mixedParts) {
       body.cashPart = mixedParts.cashPart
       body.cardPart = mixedParts.cardPart

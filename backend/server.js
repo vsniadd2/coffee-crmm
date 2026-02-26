@@ -433,7 +433,7 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
     await dbClient.query('BEGIN');
     
     const clientId = req.params.id;
-    const { price, items } = req.body; // items - массив товаров [{productId, productName, productPrice, quantity}]
+    const { price, items, isTopUp } = req.body; // items - массив товаров; isTopUp - зачисление на счёт (не попадает в графики)
 
     // Получение текущего клиента
     const clientResult = await dbClient.query(
@@ -481,9 +481,10 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
     }
     const createdByUser = req.user?.username || null;
     const pointId = await getPointIdForInsert(req);
+    const operationType = isTopUp ? 'topup' : 'sale';
     const transactionResult = await dbClient.query(
-      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id, cash_part, card_part) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id',
-      [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId, cashPart, cardPart]
+      'INSERT INTO transactions (client_id, amount, discount, final_amount, payment_method, employee_discount, created_by_user, point_id, cash_part, card_part, operation_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id',
+      [clientId, priceFloat, discount, finalAmount, paymentMethod, employeeDiscount, createdByUser, pointId, cashPart, cardPart, operationType]
     );
 
     const transactionId = transactionResult.rows[0].id;
@@ -681,16 +682,17 @@ app.get('/api/purchases/payment-stats', verifyAccessToken, async (req, res) => {
     const dateTo = req.query.dateTo || null;
     const { pointId } = getPointFilter(req);
 
+    const saleOnly = "COALESCE(operation_type, 'sale') NOT IN ('return', 'topup')";
     let query = `
       SELECT 
-        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0) 
-          + COALESCE(SUM(cash_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as cash_total,
-        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0) 
-          + COALESCE(SUM(card_part) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return'), 0) as card_total,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND COALESCE(operation_type, 'sale') != 'return'), 0)
-          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return' AND COALESCE(cash_part, 0) >= COALESCE(card_part, 0)), 0) as cash_count,
-        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND COALESCE(operation_type, 'sale') != 'return'), 0)
-          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND COALESCE(operation_type, 'sale') != 'return' AND COALESCE(card_part, 0) > COALESCE(cash_part, 0)), 0) as card_count
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'cash' AND ${saleOnly}), 0) 
+          + COALESCE(SUM(cash_part) FILTER (WHERE payment_method = 'mixed' AND ${saleOnly}), 0) as cash_total,
+        COALESCE(SUM(final_amount) FILTER (WHERE payment_method = 'card' AND ${saleOnly}), 0) 
+          + COALESCE(SUM(card_part) FILTER (WHERE payment_method = 'mixed' AND ${saleOnly}), 0) as card_total,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash' AND ${saleOnly}), 0)
+          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND ${saleOnly} AND COALESCE(cash_part, 0) >= COALESCE(card_part, 0)), 0) as cash_count,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'card' AND ${saleOnly}), 0)
+          + COALESCE(COUNT(*) FILTER (WHERE payment_method = 'mixed' AND ${saleOnly} AND COALESCE(card_part, 0) > COALESCE(cash_part, 0)), 0) as card_count
       FROM transactions
     `;
 
@@ -761,7 +763,7 @@ app.get('/api/orders/stats/products', verifyAccessToken, async (req, res) => {
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
-      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+      WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')
         AND (
           ti.product_name NOT ILIKE '%пачка%'
           AND ti.product_name NOT ILIKE '%турка%'
@@ -851,7 +853,7 @@ app.get('/api/orders/stats/categories', verifyAccessToken, async (req, res) => {
       )
       LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
       LEFT JOIN product_categories pc ON ps.category_id = pc.id
-      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+      WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')
         AND pc.id IS NOT NULL
     `;
 
@@ -934,7 +936,7 @@ app.get('/api/orders/stats/product', verifyAccessToken, async (req, res) => {
         DATE(t.created_at) as sale_date
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
-      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+      WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')
     `;
 
     const conditions = [];
@@ -1031,7 +1033,7 @@ app.get('/api/orders/stats/weekly-sales', verifyAccessToken, async (req, res) =>
       sales AS (
         SELECT DATE(t.created_at) as day, COALESCE(SUM(t.final_amount), 0) as total, COUNT(*) as count
         FROM transactions t
-        WHERE COALESCE(t.operation_type, 'sale') != 'return' ${salesFilter}
+        WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup') ${salesFilter}
           ${pointId != null ? 'AND t.point_id = $1' : ''}
         GROUP BY DATE(t.created_at)
       )
@@ -1078,7 +1080,7 @@ app.get('/api/orders/stats/day-top-products', verifyAccessToken, async (req, res
         COUNT(DISTINCT ti.transaction_id) as order_count
       FROM transaction_items ti
       INNER JOIN transactions t ON ti.transaction_id = t.id
-      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+      WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')
         AND DATE(t.created_at) = $1
     `;
 
@@ -1173,7 +1175,7 @@ app.get('/api/orders/stats/category-products', verifyAccessToken, async (req, re
       )
       LEFT JOIN product_subcategories ps ON p.subcategory_id = ps.id
       LEFT JOIN product_categories pc ON ps.category_id = pc.id
-      WHERE COALESCE(t.operation_type, 'sale') != 'return'
+      WHERE COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')
         AND pc.id = $1
     `;
 

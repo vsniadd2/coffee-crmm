@@ -7,7 +7,11 @@ import PaymentMethodModal from './PaymentMethodModal'
 import { normalizeMiddleNameForDisplay, normalizeClientIdForDisplay } from '../utils/clientDisplay'
 import './PurchaseModal.css'
 
+const MODE_ORDER = 'order'
+const MODE_TOPUP = 'topup'
+
 const PurchaseModal = ({ client, onClose }) => {
+  const [mode, setMode] = useState(MODE_ORDER)
   const [price, setPrice] = useState('')
   const [loading, setLoading] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState({})
@@ -74,9 +78,9 @@ const PurchaseModal = ({ client, onClose }) => {
       }
 
       const mixedParts = paymentMethod === 'mixed' && options ? { cashPart: options.cashPart, cardPart: options.cardPart } : null
-      const result = await addPurchase(client.id, purchaseData.price, purchaseData.items, paymentMethod, 0, mixedParts)
+      const result = await addPurchase(client.id, purchaseData.price, purchaseData.items, paymentMethod, 0, mixedParts, purchaseData.isTopUp)
       if (result.success) {
-        showNotification('Покупка успешно добавлена!', 'success')
+        showNotification(purchaseData.isTopUp ? 'Средства зачислены на счёт!' : 'Покупка успешно добавлена!', 'success')
         setTimeout(() => refreshAll(), 100)
         onClose()
         setPrice('')
@@ -95,22 +99,21 @@ const PurchaseModal = ({ client, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    const p = productsTotal > 0 ? productsTotal : Number.parseFloat(price)
+    const isTopUp = mode === MODE_TOPUP
+    const p = isTopUp ? Number.parseFloat(price) : (productsTotal > 0 ? productsTotal : Number.parseFloat(price))
     if (!Number.isFinite(p) || p <= 0) {
-      showNotification('Введите корректную цену или выберите товары', 'error')
+      showNotification(isTopUp ? 'Введите сумму для зачисления' : 'Введите корректную цену или выберите товары', 'error')
       return
     }
 
-    const finalAmount = discountInfo ? discountInfo.finalPrice : p
-
-    // Подготавливаем товары для отправки
-    const items = Object.values(selectedProducts).map(item => ({
+    const finalAmount = isTopUp ? p : (discountInfo ? discountInfo.finalPrice : p)
+    const items = isTopUp ? [] : Object.values(selectedProducts).map(item => ({
       productId: item.product.id,
       productName: item.product.name,
       productPrice: item.product.price,
       quantity: item.quantity
     }))
-    setPendingPurchaseData({ price: p, items, finalAmount })
+    setPendingPurchaseData({ price: p, items, finalAmount, isTopUp })
     setShowPaymentModal(true)
   }
 
@@ -126,10 +129,26 @@ const PurchaseModal = ({ client, onClose }) => {
       <div className="modal-content modal-content-large">
         <div className="modal-header">
           <div>
-            <h2>Новая покупка</h2>
+            <h2>{mode === MODE_TOPUP ? 'Зачислить на счёт' : 'Новая покупка'}</h2>
             <div className="purchase-subtitle">
               Клиент: <span className="mono">{fullName || '—'}</span> • ID:{' '}
               <span className="mono">{normalizeClientIdForDisplay(client.client_id)}</span>
+            </div>
+            <div className="purchase-modal-tabs">
+              <button
+                type="button"
+                className={`purchase-modal-tab ${mode === MODE_ORDER ? 'active' : ''}`}
+                onClick={() => setMode(MODE_ORDER)}
+              >
+                Оформить заказ
+              </button>
+              <button
+                type="button"
+                className={`purchase-modal-tab ${mode === MODE_TOPUP ? 'active' : ''}`}
+                onClick={() => setMode(MODE_TOPUP)}
+              >
+                Зачислить на счёт
+              </button>
             </div>
           </div>
           <button className="close-modal" onClick={onClose}>
@@ -147,23 +166,25 @@ const PurchaseModal = ({ client, onClose }) => {
         </div>
 
         <div className="modal-two-columns">
-          {/* Левая колонка - Выбор товаров */}
-          <div className="modal-left-column">
-            <h3 style={{ marginBottom: 14, fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
-              Выбор товаров
-            </h3>
-            <ProductSelector 
-              onProductsChange={handleProductsChange}
-              initialTotal={productsTotal}
-            />
-          </div>
+          {/* Левая колонка - Выбор товаров (только в режиме заказа) */}
+          {mode === MODE_ORDER && (
+            <div className="modal-left-column">
+              <h3 style={{ marginBottom: 14, fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
+                Выбор товаров
+              </h3>
+              <ProductSelector 
+                onProductsChange={handleProductsChange}
+                initialTotal={productsTotal}
+              />
+            </div>
+          )}
 
           {/* Правая колонка - Форма */}
-          <div className="modal-right-column">
+          <div className={`modal-right-column ${mode === MODE_TOPUP ? 'modal-right-column-full' : ''}`}>
             <form onSubmit={handleSubmit}>
               <div className="form-row one-col">
                 <div className="input-group">
-                  <label>Цена</label>
+                  <label>{mode === MODE_TOPUP ? 'Сумма к зачислению (BYN)' : 'Цена'}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -172,11 +193,12 @@ const PurchaseModal = ({ client, onClose }) => {
                     onChange={(e) => setPrice(e.target.value)}
                     disabled={loading}
                     autoFocus
+                    placeholder={mode === MODE_TOPUP ? '0.00' : undefined}
                   />
                 </div>
               </div>
 
-              {discountInfo && (
+              {mode === MODE_ORDER && discountInfo && (
                 <div className="discount-preview">
                   <div className="discount-badge">
                     <span>Скидка {discountInfo.discount}%</span>
@@ -200,7 +222,7 @@ const PurchaseModal = ({ client, onClose }) => {
                   Отмена
                 </button>
                 <button type="submit" className="btn-submit" disabled={loading}>
-                  {loading ? 'Сохранение...' : 'Добавить покупку'}
+                  {loading ? 'Сохранение...' : mode === MODE_TOPUP ? 'Зачислить' : 'Добавить покупку'}
                 </button>
               </div>
             </form>
