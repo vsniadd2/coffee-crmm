@@ -2,18 +2,30 @@
 # Обновление приложения на сервере после git push
 # Запускать на сервере из корня проекта: bash scripts/deploy-on-server.sh
 #
-# БД хранится в именованном volume postgres_data — сохраняется при git pull
-# и пересборке. Удаляется ТОЛЬКО при: docker compose down -v
+# 1) Бэкап БД в backups/
+# 2) Останавливаем контейнеры (без -v, данные БД в volume сохраняются!)
+# 3) git pull
+# 4) Собираем и поднимаем контейнеры заново
 
 set -e
-echo "→ 1. Обновление кода из Git..."
-git pull origin main 2>/dev/null || git pull
+cd "$(dirname "$0")/.."
 
-echo "→ 2. Пересборка и перезапуск контейнеров..."
-echo "   (данные БД в volume сохраняются)"
+echo "→ 1. Бэкап БД (на всякий случай)..."
+bash scripts/backup-db.sh || true
+echo ""
+
+echo "→ 2. Останавливаем контейнеры..."
+docker compose down
+echo ""
+
+echo "→ 3. Подтягиваем обновления из Git..."
+git pull origin main 2>/dev/null || git pull
+echo ""
+
+echo "→ 4. Собираем и поднимаем контейнеры..."
 docker compose up -d --build
 
-echo "→ 3. Готово. Статус:"
+echo "→ 5. Готово. Статус:"
 docker compose ps
 
 echo ""
