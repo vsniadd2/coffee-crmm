@@ -25,7 +25,7 @@ const CategoriesPage = () => {
   const [editProduct, setEditProduct] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ type: null, id: null, name: '' })
   const DEFAULT_CATEGORY_COLOR = '#6b7280'
-  const [formData, setFormData] = useState({ name: '', displayOrder: 0, price: '', subcategoryId: '', categoryId: '', imageUrl: '' })
+  const [formData, setFormData] = useState({ name: '', displayOrder: 0, includeInReportTable: false, price: '', subcategoryId: '', categoryId: '', imageUrl: '' })
   const [imagePreview, setImagePreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [imageCompressing, setImageCompressing] = useState(false)
@@ -221,20 +221,23 @@ const CategoriesPage = () => {
     try {
       if (editSubcategory) {
         await adminProductsService.updateSubcategory(editSubcategory.id, {
-          name: formData.name,
-          displayOrder: editSubcategory.display_order ?? 0
+          name: formData.name ?? '',
+          displayOrder: editSubcategory.display_order ?? 0,
+          includeInReportTable: !!formData.includeInReportTable
         })
+        const categoryIdToReload = editSubcategory.category_id
         setEditSubcategory(null)
+        setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
+        await loadSubcategories(categoryIdToReload)
       } else {
         await adminProductsService.createSubcategory({
           categoryId: addSubcategory,
-          name: formData.name,
-          displayOrder: formData.displayOrder || 0
+          name: formData.name ?? '',
+          displayOrder: formData.displayOrder || 0,
+          includeInReportTable: !!formData.includeInReportTable
         })
         setAddSubcategory(null)
-      }
-      setFormData({ name: '', displayOrder: 0 })
-      if (addSubcategory) {
+        setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
         await loadSubcategories(addSubcategory)
       }
       setTimeout(() => refreshAll(), 100)
@@ -376,7 +379,7 @@ const CategoriesPage = () => {
                   <div className="categories-edit-form">
                     <input
                       type="text"
-                      value={formData.name}
+                      value={formData.name ?? ''}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Название категории"
                       className="categories-input"
@@ -411,7 +414,7 @@ const CategoriesPage = () => {
                       className="categories-add-subcategory"
                       onClick={() => {
                         setAddSubcategory(cat.id)
-                        setFormData({ name: '', displayOrder: 0 })
+                        setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
                       }}
                     >
                       + Подкатегория
@@ -421,11 +424,20 @@ const CategoriesPage = () => {
                       <div className="categories-edit-form">
                         <input
                           type="text"
-                          value={formData.name}
+                          value={formData.name ?? ''}
                           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           placeholder="Название подкатегории"
                           className="categories-input"
                         />
+                        <label className="categories-track-checkbox">
+                          <span>Учёт в таблице отчёта</span>
+                          <input
+                            type="checkbox"
+                            checked={!!formData.includeInReportTable}
+                            onChange={(e) => setFormData({ ...formData, includeInReportTable: e.target.checked })}
+                          />
+                          <span className="categories-track-checkbox-visual" />
+                        </label>
                         <div className="categories-form-actions">
                           <button
                             type="button"
@@ -440,7 +452,7 @@ const CategoriesPage = () => {
                             className="categories-btn-cancel"
                             onClick={() => {
                               setAddSubcategory(null)
-                              setFormData({ name: '', displayOrder: 0 })
+                              setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
                             }}
                           >
                             Отмена
@@ -467,7 +479,7 @@ const CategoriesPage = () => {
                                 className="categories-btn-edit"
                                 onClick={() => {
                                   setEditSubcategory(sub)
-                                  setFormData({ name: sub.name, displayOrder: sub.display_order || 0 })
+                                  setFormData({ name: sub.name, displayOrder: sub.display_order || 0, includeInReportTable: !!sub.include_in_report_table })
                                 }}
                               >
                                 Изменить
@@ -486,11 +498,20 @@ const CategoriesPage = () => {
                             <div className="categories-edit-form">
                               <input
                                 type="text"
-                                value={formData.name}
+                                value={formData.name ?? ''}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 placeholder="Название подкатегории"
                                 className="categories-input"
                               />
+                              <label className="categories-track-checkbox">
+                                <span>Учёт в таблице отчёта</span>
+                                <input
+                                  type="checkbox"
+                                  checked={!!formData.includeInReportTable}
+                                  onChange={(e) => setFormData({ ...formData, includeInReportTable: e.target.checked })}
+                                />
+                                <span className="categories-track-checkbox-visual" />
+                              </label>
                               <div className="categories-form-actions">
                                 <button
                                   type="button"
@@ -505,7 +526,7 @@ const CategoriesPage = () => {
                                   className="categories-btn-cancel"
                                   onClick={() => {
                                     setEditSubcategory(null)
-                                    setFormData({ name: '', displayOrder: 0 })
+                                    setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
                                   }}
                                 >
                                   Отмена
@@ -532,7 +553,7 @@ const CategoriesPage = () => {
                                 <div className="categories-edit-form">
                                   <input
                                     type="text"
-                                    value={formData.name}
+                                    value={formData.name ?? ''}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                     placeholder="Название товара"
                                     className="categories-input"
@@ -540,7 +561,7 @@ const CategoriesPage = () => {
                                   <input
                                     type="number"
                                     step="0.01"
-                                    value={formData.price}
+                                    value={formData.price ?? ''}
                                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                                     placeholder="Цена"
                                     className="categories-input"
@@ -621,7 +642,7 @@ const CategoriesPage = () => {
                                       <div className="categories-edit-form">
                                         <input
                                           type="text"
-                                          value={formData.name}
+                                          value={formData.name ?? ''}
                                           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                           placeholder="Название товара"
                                           className="categories-input"
@@ -629,7 +650,7 @@ const CategoriesPage = () => {
                                         <input
                                           type="number"
                                           step="0.01"
-                                          value={formData.price}
+                                          value={formData.price ?? ''}
                                           onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                                           placeholder="Цена"
                                           className="categories-input"

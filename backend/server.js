@@ -1,5 +1,8 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
+const { WebSocketServer } = require('ws');
 const bcrypt = require('bcryptjs');
 const { pool, initDatabase } = require('./database');
 const {
@@ -58,13 +61,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(compression());
 app.use(cors({
   origin: '*',
   credentials: true
 }));
-// Увеличиваем лимит для обработки больших base64 изображений (до 50 МБ)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Лимит тела запроса (base64-изображения до 10 МБ укладываются в ~14 МБ)
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 // Инициализация базы данных при старте (будет выполнена перед запуском сервера)
 
@@ -120,6 +124,7 @@ app.post('/api/auth/login', async (req, res) => {
 // Список точек продаж (для админа — выбор точки в фильтрах)
 app.get('/api/points', verifyAccessToken, async (req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=60');
     const result = await pool.query('SELECT id, name FROM points ORDER BY id');
     res.json(result.rows);
   } catch (error) {
@@ -412,6 +417,7 @@ app.post('/api/clients', verifyAccessToken, async (req, res) => {
       }
     }
 
+    broadcastDataUpdated();
     res.json({
       client,
       transaction: {
@@ -508,6 +514,7 @@ app.post('/api/clients/:id/purchase', verifyAccessToken, async (req, res) => {
 
     await dbClient.query('COMMIT');
 
+    broadcastDataUpdated();
     res.json({
       client: {
         ...clientData,
@@ -579,6 +586,7 @@ app.post('/api/purchases/anonymous', verifyAccessToken, async (req, res) => {
       }
     }
 
+    broadcastDataUpdated();
     res.json({
       success: true,
       transaction: {
@@ -628,6 +636,7 @@ app.put('/api/admin/clients/:id', verifyAccessToken, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Клиент не найден' });
     }
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка редактирования клиента:', error);
@@ -642,6 +651,7 @@ app.delete('/api/admin/clients/:id', verifyAccessToken, requireAdmin, async (req
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Клиент не найден' });
     }
+    broadcastDataUpdated();
     res.json({ success: true, message: 'Клиент удален' });
   } catch (error) {
     console.error('Ошибка удаления клиента:', error);
@@ -1600,6 +1610,7 @@ app.delete('/api/admin/transactions/:id', verifyAccessToken, async (req, res) =>
       [newTotal, transaction.client_id]
     );
     
+    broadcastDataUpdated();
     res.json({ success: true, message: 'Транзакция удалена' });
   } catch (error) {
     console.error('Ошибка удаления транзакции:', error);
@@ -1645,6 +1656,7 @@ app.put('/api/admin/transactions/:id', verifyAccessToken, async (req, res) => {
     );
     
     const updatedTransaction = await pool.query('SELECT * FROM transactions WHERE id = $1', [id]);
+    broadcastDataUpdated();
     res.json(updatedTransaction.rows[0]);
   } catch (error) {
     console.error('Ошибка редактирования транзакции:', error);
@@ -1691,6 +1703,7 @@ app.get('/api/admin/transactions/:id', verifyAccessToken, async (req, res) => {
 
 app.get('/api/products/tree', verifyAccessToken, async (req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=60');
     const categoriesResult = await pool.query(
       'SELECT id, name, icon, display_order FROM product_categories ORDER BY display_order, id'
     );
@@ -1833,6 +1846,7 @@ app.post('/api/admin/products/categories', verifyAccessToken, requireAdmin, asyn
        RETURNING *`,
       [name, color || '#000000', icon || null, displayOrder || 0, !!trackCharts]
     );
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка создания категории:', error);
@@ -1857,6 +1871,7 @@ app.put('/api/admin/products/categories/:id', verifyAccessToken, requireAdmin, a
       return res.status(404).json({ error: 'Категория не найдена' });
     }
     
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка редактирования категории:', error);
@@ -1869,6 +1884,7 @@ app.delete('/api/admin/products/categories/:id', verifyAccessToken, requireAdmin
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM product_categories WHERE id = $1', [id]);
+    broadcastDataUpdated();
     res.json({ success: true, message: 'Категория удалена' });
   } catch (error) {
     console.error('Ошибка удаления категории:', error);
@@ -1894,13 +1910,14 @@ app.get('/api/admin/products/categories/:categoryId/subcategories', verifyAccess
 // Создание подкатегории
 app.post('/api/admin/products/subcategories', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
-    const { categoryId, name, displayOrder } = req.body;
+    const { categoryId, name, displayOrder, includeInReportTable } = req.body;
     const result = await pool.query(
-      `INSERT INTO product_subcategories (category_id, name, display_order)
-       VALUES ($1, $2, $3)
+      `INSERT INTO product_subcategories (category_id, name, display_order, include_in_report_table)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [categoryId, name, displayOrder || 0]
+      [categoryId, name, displayOrder || 0, !!includeInReportTable]
     );
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка создания подкатегории:', error);
@@ -1912,19 +1929,18 @@ app.post('/api/admin/products/subcategories', verifyAccessToken, requireAdmin, a
 app.put('/api/admin/products/subcategories/:id', verifyAccessToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, displayOrder } = req.body;
+    const { name, displayOrder, includeInReportTable } = req.body;
     const result = await pool.query(
       `UPDATE product_subcategories 
-       SET name = $1, display_order = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       SET name = $1, display_order = $2, include_in_report_table = $3, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
        RETURNING *`,
-      [name, displayOrder, id]
+      [name, displayOrder, !!includeInReportTable, id]
     );
-    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Подкатегория не найдена' });
     }
-    
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка редактирования подкатегории:', error);
@@ -1937,9 +1953,72 @@ app.delete('/api/admin/products/subcategories/:id', verifyAccessToken, requireAd
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM product_subcategories WHERE id = $1', [id]);
+    broadcastDataUpdated();
     res.json({ success: true, message: 'Подкатегория удалена' });
   } catch (error) {
     console.error('Ошибка удаления подкатегории:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Таблица отчёта по подкатегориям (вкладка «Таблица») — только для админа
+app.get('/api/report-table', verifyAccessToken, requireAdmin, async (req, res) => {
+  try {
+    const { pointId } = getPointFilter(req);
+    const dateParam = req.query.date; // YYYY-MM-DD — один день
+    const dateFromParam = req.query.dateFrom; // YYYY-MM-DD — начало периода
+    const dateToParam = req.query.dateTo; // YYYY-MM-DD — конец периода
+    const subcatsResult = await pool.query(
+      `SELECT id, name FROM product_subcategories
+       WHERE include_in_report_table = true
+       ORDER BY display_order, id`
+    );
+    const blocks = [];
+    const saleOnly = "COALESCE(t.operation_type, 'sale') NOT IN ('return', 'topup')";
+    for (const sub of subcatsResult.rows) {
+      const params = [sub.id];
+      let pointCondition = '';
+      if (pointId != null) {
+        params.push(pointId);
+        pointCondition = ` AND t.point_id = $${params.length}`;
+      }
+      let dateCondition = '';
+      if (dateFromParam && dateToParam && /^\d{4}-\d{2}-\d{2}$/.test(dateFromParam) && /^\d{4}-\d{2}-\d{2}$/.test(dateToParam)) {
+        params.push(dateFromParam, dateToParam);
+        dateCondition = ` AND t.created_at::date >= $${params.length - 1}::date AND t.created_at::date <= $${params.length}::date`;
+      } else if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        params.push(dateParam);
+        dateCondition = ` AND t.created_at::date = $${params.length}::date`;
+      }
+      const rowsResult = await pool.query(
+        `SELECT ti.product_name, ti.product_price, ti.quantity, t.payment_method
+         FROM transaction_items ti
+         INNER JOIN transactions t ON ti.transaction_id = t.id
+         INNER JOIN products p ON ti.product_id ~ '^[0-9]+$' AND p.id = CAST(ti.product_id AS INTEGER) AND p.subcategory_id = $1
+         WHERE ${saleOnly}${pointCondition}${dateCondition}
+         ORDER BY t.created_at DESC`,
+        params
+      );
+      const paymentLabel = (pm) => {
+        if (pm === 'card') return 'Карта';
+        if (pm === 'cash') return 'Наличка';
+        if (pm === 'mixed') return 'Смешанная оплата';
+        return pm || '—';
+      };
+      blocks.push({
+        subcategoryId: sub.id,
+        subcategoryName: sub.name,
+        rows: rowsResult.rows.map((r) => ({
+          productName: r.product_name,
+          price: parseFloat(r.product_price) || 0,
+          paymentType: paymentLabel(r.payment_method),
+          quantity: parseInt(r.quantity, 10) || 0
+        }))
+      });
+    }
+    res.json({ blocks });
+  } catch (error) {
+    console.error('Ошибка получения таблицы отчёта:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -1988,6 +2067,7 @@ app.post('/api/admin/products', verifyAccessToken, requireAdmin, async (req, res
        RETURNING *`,
       [subcategoryId, name.trim(), parseFloat(price), description || null, finalImageData, displayOrder || 0, finalTags]
     );
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка создания товара:', error);
@@ -2037,6 +2117,7 @@ app.put('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (req, 
       return res.status(404).json({ error: 'Товар не найден' });
     }
     
+    broadcastDataUpdated();
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка редактирования товара:', error);
@@ -2059,6 +2140,7 @@ app.delete('/api/admin/products/:id', verifyAccessToken, requireAdmin, async (re
   try {
     const { id } = req.params;
     await pool.query('DELETE FROM products WHERE id = $1', [id]);
+    broadcastDataUpdated();
     res.json({ success: true, message: 'Товар удален' });
   } catch (error) {
     console.error('Ошибка удаления товара:', error);
@@ -2218,15 +2300,42 @@ const executeDeletion = async () => {
 // Запускаем проверку тикетов каждую минуту
 setInterval(executeDeletion, 60000); // 60000 мс = 1 минута
 
+// HTTP-сервер для Express и WebSocket на одном порту
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+const WS_PING_INTERVAL_MS = 25000;
+
+wss.on('connection', (ws) => {
+  ws.on('error', () => {});
+
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === 1) {
+      ws.ping();
+    }
+  }, WS_PING_INTERVAL_MS);
+
+  ws.on('close', () => {
+    clearInterval(pingInterval);
+  });
+});
+
+/** Рассылка всем подключённым клиентам: данные изменились, можно обновить списки */
+function broadcastDataUpdated() {
+  const payload = JSON.stringify({ type: 'data_updated' });
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) client.send(payload);
+  });
+}
+
 // Инициализируем БД и только потом запускаем сервер
 initDatabase()
   .then(() => {
-    app.listen(PORT, '0.0.0.0', async () => {
-      console.log(`🚀 Сервер запущен на порту ${PORT}`);
-      // Ждем инициализации базы данных перед проверкой тикетов
+    server.listen(PORT, '0.0.0.0', async () => {
+      console.log(`🚀 Сервер запущен на порту ${PORT} (HTTP + WebSocket)`);
       setTimeout(() => {
         executeDeletion();
-      }, 2000); // Даем время на создание таблиц
+      }, 2000);
     });
   })
   .catch(err => {

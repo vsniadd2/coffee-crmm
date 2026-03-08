@@ -24,7 +24,7 @@ const CategoriesManageModal = ({ onClose }) => {
   const [editProduct, setEditProduct] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState({ type: null, id: null, name: '' })
   const DEFAULT_CATEGORY_COLOR = '#6b7280'
-  const [formData, setFormData] = useState({ name: '', displayOrder: 0, price: '', subcategoryId: '', categoryId: '', imageUrl: '', trackCharts: false })
+  const [formData, setFormData] = useState({ name: '', displayOrder: 0, includeInReportTable: false, price: '', subcategoryId: '', categoryId: '', imageUrl: '', trackCharts: false })
   const [imagePreview, setImagePreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [imageCompressing, setImageCompressing] = useState(false)
@@ -144,18 +144,20 @@ const CategoriesManageModal = ({ onClose }) => {
       if (editSubcategory) {
         await adminProductsService.updateSubcategory(editSubcategory.id, {
           name: formData.name,
-          displayOrder: editSubcategory.display_order ?? 0
+          displayOrder: editSubcategory.display_order ?? 0,
+          includeInReportTable: !!formData.includeInReportTable
         })
         setEditSubcategory(null)
       } else {
         await adminProductsService.createSubcategory({
           categoryId,
           name: formData.name,
-          displayOrder: 0
+          displayOrder: 0,
+          includeInReportTable: !!formData.includeInReportTable
         })
         setAddSubcategory(null)
       }
-      setFormData({ name: '', displayOrder: 0 })
+      setFormData({ name: '', displayOrder: 0, includeInReportTable: false })
       loadSubcategories(categoryId)
       // Обновляем данные в других компонентах без перезагрузки страницы
       setTimeout(() => refreshAll(), 100)
@@ -445,7 +447,7 @@ const CategoriesManageModal = ({ onClose }) => {
                       </div>
                       {expandedCategory === cat.id && (
                         <div className="categories-manage-children">
-                          <button type="button" className="categories-manage-btn-add-sm" onClick={() => { setAddSubcategory(cat.id); setFormData({ name: '', displayOrder: 0 }) }}>+ Подкатегория</button>
+                          <button type="button" className="categories-manage-btn-add-sm" onClick={() => { setAddSubcategory(cat.id); setFormData({ name: '', displayOrder: 0, includeInReportTable: false }) }}>+ Подкатегория</button>
                           {addSubcategory === cat.id && (
                             <div className="categories-manage-form-block">
                               <div className="categories-manage-form-title">Новая подкатегория</div>
@@ -453,6 +455,12 @@ const CategoriesManageModal = ({ onClose }) => {
                                 <div className="categories-manage-form-group">
                                   <label>Название подкатегории — например: Группа КОФЕ: 250ГР</label>
                                   <input placeholder="Название подкатегории" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                </div>
+                                <div className="categories-manage-form-group">
+                                  <label className="categories-manage-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', width: 'fit-content', alignSelf: 'flex-start' }}>
+                                    <span>Учёт в таблице отчёта</span>
+                                    <input type="checkbox" checked={!!formData.includeInReportTable} onChange={e => setFormData(prev => ({ ...prev, includeInReportTable: e.target.checked }))} />
+                                  </label>
                                 </div>
                                 <div className="categories-manage-form-actions">
                                   <button type="button" className="categories-manage-btn-save" onClick={handleSaveSubcategory} disabled={saving || !formData.name.trim()}>Сохранить</button>
@@ -471,6 +479,12 @@ const CategoriesManageModal = ({ onClose }) => {
                                       <div className="categories-manage-form-group">
                                         <label>Название подкатегории</label>
                                         <input placeholder="Название" value={formData.name ?? ''} onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))} />
+                                      </div>
+                                      <div className="categories-manage-form-group">
+                                        <label className="categories-manage-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', width: 'fit-content', alignSelf: 'flex-start' }}>
+                                          <span>Учёт в таблице отчёта</span>
+                                          <input type="checkbox" checked={!!formData.includeInReportTable} onChange={e => setFormData(prev => ({ ...prev, includeInReportTable: e.target.checked }))} />
+                                        </label>
                                       </div>
                                       <div className="categories-manage-form-actions">
                                         <button type="button" className="categories-manage-btn-save" onClick={handleSaveSubcategory} disabled={saving}>Сохранить</button>
@@ -492,7 +506,7 @@ const CategoriesManageModal = ({ onClose }) => {
                                       <span className="categories-manage-expand" aria-hidden="true">{expandedSubcategory === sub.id ? '▼' : '▶'}</span>
                                       <span className="categories-manage-name">{sub.name}</span>
                                       <span className="categories-manage-actions-row" onClick={(e) => e.stopPropagation()}>
-                                        <button type="button" className="categories-manage-btn-sm" onClick={() => { setEditSubcategory(sub); setFormData({ name: sub.name, displayOrder: sub.display_order || 0 }) }}>Изменить</button>
+                                        <button type="button" className="categories-manage-btn-sm" onClick={() => { setEditSubcategory(sub); setFormData({ name: sub.name, displayOrder: sub.display_order || 0, includeInReportTable: !!sub.include_in_report_table }) }}>Изменить</button>
                                         <button type="button" className="categories-manage-btn-sm danger" onClick={() => setConfirmDelete({ type: 'subcategory', id: sub.id, name: sub.name, categoryId: cat.id })}>Удалить</button>
                                       </span>
                                     </div>

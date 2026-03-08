@@ -1,27 +1,25 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import Login from './Login'
-import PurchaseHistory from './PurchaseHistory'
 import Header from './Header'
-import ClientList from './ClientList'
 import ClientModal from './ClientModal'
 import PurchaseModal from './PurchaseModal'
 import CategoriesManageModal from './CategoriesManageModal'
-import NewClientPage from './NewClientPage'
-import StatsPage from './StatsPage'
-import CategoriesPage from './CategoriesPage'
 import Footer from './Footer'
 import HelloOverlay from './HelloOverlay'
+import LoadingIndicator from './LoadingIndicator'
+import DataRefreshWebSocket from './DataRefreshWebSocket'
 import './Dashboard.css'
 
-const AppRouter = () => {
-  const { isAuthenticated, loading, showHelloAfterLogin, clearShowHello, ensureValidToken } = useAuth()
+const PurchaseHistory = lazy(() => import('./PurchaseHistory'))
+const NewClientPage = lazy(() => import('./NewClientPage'))
+const StatsPage = lazy(() => import('./StatsPage'))
+const CategoriesPage = lazy(() => import('./CategoriesPage'))
+const ReportTablePage = lazy(() => import('./ReportTablePage'))
+const ClientList = lazy(() => import('./ClientList'))
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      ensureValidToken()
-    }
-  }, [isAuthenticated, ensureValidToken])
+const AppRouter = () => {
+  const { isAuthenticated, loading, showHelloAfterLogin, clearShowHello, ensureValidToken, user } = useAuth()
   const [currentPage, setCurrentPage] = useState(() => {
     // Загружаем последнюю открытую страницу из localStorage
     try {
@@ -37,6 +35,23 @@ const AppRouter = () => {
   })
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedClient, setSelectedClient] = useState(null)
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      ensureValidToken()
+    }
+  }, [isAuthenticated, ensureValidToken])
+
+  // Страница «Таблица» только для админа: при открытии не-админом перенаправляем на «Новый заказ»
+  useEffect(() => {
+    if (!isAuthenticated || loading) return
+    if (currentPage === 'report-table' && user?.role !== 'admin') {
+      setCurrentPage('new-client')
+      try {
+        localStorage.setItem('currentPage', 'new-client')
+      } catch {}
+    }
+  }, [isAuthenticated, loading, currentPage, user?.role])
 
   // Сохраняем текущую страницу в localStorage при изменении
   const handleNavigate = (page) => {
@@ -80,6 +95,8 @@ const AppRouter = () => {
         return <StatsPage />
       case 'categories':
         return <CategoriesPage />
+      case 'report-table':
+        return user?.role === 'admin' ? <ReportTablePage /> : <NewClientPage />
       case 'new-client':
       default:
         return <NewClientPage />
@@ -88,6 +105,7 @@ const AppRouter = () => {
 
   return (
     <div className="main-screen">
+      <DataRefreshWebSocket />
       {showHelloAfterLogin && (
         <HelloOverlay onEnd={clearShowHello} />
       )}
@@ -99,7 +117,9 @@ const AppRouter = () => {
           onNavigate={handleNavigate}
         />
         <main className="main-content">
-          {renderPage()}
+          <Suspense fallback={<LoadingIndicator />}>
+            {renderPage()}
+          </Suspense>
         </main>
         <Footer />
         {isModalOpen && (

@@ -71,6 +71,15 @@ const Header = ({ onAddClient, onSelectClient, currentPage, onNavigate }) => {
           >
             Новый заказ
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => onNavigate?.('report-table')}
+              className={`nav-link ${currentPage === 'report-table' ? 'active' : ''}`}
+            >
+              Таблица
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onNavigate?.('clients')}
@@ -153,6 +162,15 @@ const Header = ({ onAddClient, onSelectClient, currentPage, onNavigate }) => {
           >
             Новый заказ
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleNav('report-table')}
+              className={`mobile-nav-link ${currentPage === 'report-table' ? 'active' : ''}`}
+            >
+              Таблица
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleNav('clients')}

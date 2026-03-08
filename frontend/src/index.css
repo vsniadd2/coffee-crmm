@@ -224,3 +224,68 @@ body, input, button, textarea, select {
         touch-action: manipulation;
     }
 }
+
+/* ========================================
+   ПОЛЯ ДАТЫ И МЕСЯЦА — единый удобный вид
+   ======================================== */
+input[type="date"],
+input[type="month"],
+input[type="datetime-local"],
+input[type="time"] {
+    min-height: 44px;
+    padding: 10px 14px 10px 14px;
+    padding-right: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+input[type="date"]:hover,
+input[type="month"]:hover,
+input[type="datetime-local"]:hover,
+input[type="time"]:hover {
+    border-color: var(--muted);
+    background: var(--bg-soft);
+}
+
+input[type="date"]:focus,
+input[type="month"]:focus,
+input[type="datetime-local"]:focus,
+input[type="time"]:focus {
+    outline: none;
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 0 3px var(--primary-focus);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 4px;
+    margin-left: 4px;
+    width: 24px;
+    height: 24px;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+/* Firefox: убираем лишнее и выравниваем */
+@supports (-moz-appearance: none) {
+    input[type="date"],
+    input[type="month"],
+    input[type="datetime-local"] {
+        padding-right: 14px;
+    }
+}

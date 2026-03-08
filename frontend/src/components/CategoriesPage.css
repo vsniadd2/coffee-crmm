@@ -140,12 +140,14 @@
 .categories-track-checkbox {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-secondary);
   position: relative;
+  width: fit-content;
+  align-self: flex-start;
 }
 
 .categories-track-checkbox input[type="checkbox"] {

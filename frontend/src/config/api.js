@@ -20,6 +20,13 @@ const getApiUrl = () => {
 
 export const API_URL = getApiUrl()
 
+/** URL для WebSocket (тот же хост, путь /ws; в dev проксируется на бэкенд) */
+export const getWsUrl = () => {
+  if (typeof window === 'undefined') return ''
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws`
+}
+
 export const getAuthHeaders = () => {
   const token = localStorage.getItem('accessToken')
   return {

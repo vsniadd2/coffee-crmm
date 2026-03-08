@@ -62,12 +62,12 @@ export const DataRefreshProvider = ({ children }) => {
     })
   }, [])
 
-  // Автоматическое обновление каждые 5 секунд в silent режиме
+  // Резервное обновление по таймеру (основное — по WebSocket)
   useEffect(() => {
     if (autoRefreshEnabled) {
       autoRefreshIntervalRef.current = setInterval(() => {
         refreshAll({ silent: true })
-      }, 5000)
+      }, 15000)
     }
 
     return () => {
